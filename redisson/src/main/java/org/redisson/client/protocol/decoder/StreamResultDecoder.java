@@ -1,5 +1,5 @@
 /**
- * Copyright (c) 2013-2019 Nikita Koksharov
+ * Copyright (c) 2013-2021 Nikita Koksharov
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -15,13 +15,13 @@
  */
 package org.redisson.client.protocol.decoder;
 
-import java.util.Collections;
-import java.util.List;
-import java.util.Map;
-
 import org.redisson.api.StreamMessageId;
 import org.redisson.client.handler.State;
-import org.redisson.client.protocol.Decoder;
+
+import java.util.HashMap;
+import java.util.LinkedHashMap;
+import java.util.List;
+import java.util.Map;
 
 /**
  * 
@@ -30,18 +30,57 @@ import org.redisson.client.protocol.Decoder;
  */
 public class StreamResultDecoder implements MultiDecoder<Object> {
 
-    @Override
-    public Object decode(List<Object> parts, State state) {
-        if (!parts.isEmpty()) {
-            Map<String, Map<StreamMessageId, Map<Object, Object>>> result = (Map<String, Map<StreamMessageId, Map<Object, Object>>>) parts.get(0);
-            return result.values().iterator().next();
-        }
-        return Collections.emptyMap();
+    private final boolean firstResult;
+    
+    public StreamResultDecoder(boolean firstResult) {
+        super();
+        this.firstResult = firstResult;
     }
 
     @Override
-    public Decoder<Object> getDecoder(int paramNum, State state) {
-        return null;
+    public Object decode(List<Object> parts, State state) {
+        List<List<Object>> list = (List<List<Object>>) (Object) parts;
+
+//        Map<String, Map<StreamMessageId, Map<Object, Object>>> result = list.stream().collect(
+//                Collectors.groupingBy(v -> (String) v.get(0),
+//                        Collectors.mapping(v -> (List<List<Object>>) v.get(1),
+//                            Collector.of(LinkedHashMap::new,
+//                                        (m, l) -> {
+//                                            for (List<Object> objects : l) {
+//                                                m.put((StreamMessageId) objects.get(0), (Map<Object, Object>) objects.get(1));
+//                                            }
+//                                        },
+//                                        (x, y) -> {
+//                                            x.putAll(y);
+//                                            return x;
+//                                        })
+//                        )));
+//
+//        result.values().removeAll(Collections.singleton(new HashMap()));
+//
+//        if (firstResult && !result.isEmpty()) {
+//            return result.values().iterator().next();
+//        }
+//        return result;
+
+        Map<String, Map<StreamMessageId, Map<Object, Object>>> result = new HashMap<>();
+        for (List<Object> entries : list) {
+            List<List<Object>> streamEntries = (List<List<Object>>) entries.get(1);
+            if (!streamEntries.isEmpty()) {
+                String name = (String) entries.get(0);
+                Map<StreamMessageId, Map<Object, Object>> ee = new LinkedHashMap<>();
+                result.put(name, ee);
+
+                for (List<Object> se : streamEntries) {
+                    ee.put((StreamMessageId) se.get(0), (Map<Object, Object>) se.get(1));
+                }
+
+                if (firstResult) {
+                    return ee;
+                }
+            }
+        }
+        return result;
     }
 
 }

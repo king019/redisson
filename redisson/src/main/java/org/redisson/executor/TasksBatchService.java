@@ -1,5 +1,5 @@
 /**
- * Copyright (c) 2013-2019 Nikita Koksharov
+ * Copyright (c) 2013-2021 Nikita Koksharov
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -15,16 +15,14 @@
  */
 package org.redisson.executor;
 
-import java.util.List;
-import java.util.concurrent.ConcurrentMap;
-
 import org.redisson.api.RFuture;
-import org.redisson.api.RedissonClient;
 import org.redisson.client.codec.Codec;
 import org.redisson.command.CommandAsyncExecutor;
 import org.redisson.command.CommandBatchService;
-import org.redisson.command.CommandExecutor;
 import org.redisson.remote.ResponseEntry;
+
+import java.util.List;
+import java.util.concurrent.ConcurrentMap;
 
 /**
  * 
@@ -33,11 +31,11 @@ import org.redisson.remote.ResponseEntry;
  */
 public class TasksBatchService extends TasksService {
 
-    private CommandBatchService batchCommandService;
+    private final CommandBatchService batchCommandService;
     
-    public TasksBatchService(Codec codec, RedissonClient redisson, String name, CommandExecutor commandExecutor, String executorId, ConcurrentMap<String, ResponseEntry> responses) {
-        super(codec, redisson, name, commandExecutor, executorId, responses);
-        batchCommandService = new CommandBatchService(commandExecutor.getConnectionManager());
+    public TasksBatchService(Codec codec, String name, CommandAsyncExecutor commandExecutor, String executorId, ConcurrentMap<String, ResponseEntry> responses) {
+        super(codec, name, commandExecutor, executorId, responses);
+        batchCommandService = new CommandBatchService(commandExecutor);
     }
     
     @Override
@@ -46,7 +44,7 @@ public class TasksBatchService extends TasksService {
     }
 
     public List<Boolean> executeAdd() {
-        return (List<Boolean>) batchCommandService.execute();
+        return (List<Boolean>) batchCommandService.execute().getResponses();
     }
     
     public RFuture<List<Boolean>> executeAddAsync() {

@@ -1,5 +1,5 @@
 /**
- * Copyright (c) 2013-2019 Nikita Koksharov
+ * Copyright (c) 2013-2021 Nikita Koksharov
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -15,10 +15,11 @@
  */
 package org.redisson.api;
 
+import io.reactivex.rxjava3.core.Completable;
+import io.reactivex.rxjava3.core.Single;
+
 import java.util.BitSet;
 
-import io.reactivex.Completable;
-import io.reactivex.Single;
 
 /**
  * RxJava2 interface for BitSet object
@@ -28,6 +29,186 @@ import io.reactivex.Single;
  */
 public interface RBitSetRx extends RExpirableRx {
 
+    /**
+     * Returns signed number at specified
+     * <code>offset</code> and <code>size</code>
+     *
+     * @param size - size of signed number up to 64 bits
+     * @param offset - offset of signed number
+     * @return signed number
+     */
+    Single<Long> getSigned(int size, long offset);
+
+    /**
+     * Returns previous value of signed number and replaces it
+     * with defined <code>value</code> at specified <code>offset</code>
+     *
+     * @param size - size of signed number up to 64 bits
+     * @param offset - offset of signed number
+     * @param value - value of signed number
+     * @return previous value of signed number
+     */
+    Single<Long> setSigned(int size, long offset, long value);
+
+    /**
+     * Increments current signed value by
+     * defined <code>increment</code> value and <code>size</code>
+     * at specified <code>offset</code>
+     * and returns result.
+     *
+     * @param size - size of signed number up to 64 bits
+     * @param offset - offset of signed number
+     * @param increment - increment value
+     * @return result value
+     */
+    Single<Long> incrementAndGetSigned(int size, long offset, long increment);
+
+    /**
+     * Returns unsigned number at specified
+     * <code>offset</code> and <code>size</code>
+     *
+     * @param size - size of unsigned number up to 64 bits
+     * @param offset - offset of unsigned number
+     * @return unsigned number
+     */
+    Single<Long> getUnsigned(int size, long offset);
+
+    /**
+     * Returns previous value of unsigned number and replaces it
+     * with defined <code>value</code> at specified <code>offset</code>
+     *
+     * @param size - size of unsigned number up to 64 bits
+     * @param offset - offset of unsigned number
+     * @param value - value of unsigned number
+     * @return previous value of unsigned number
+     */
+    Single<Long> setUnsigned(int size, long offset, long value);
+
+    /**
+     * Increments current unsigned value by
+     * defined <code>increment</code> value and <code>size</code>
+     * at specified <code>offset</code>
+     * and returns result.
+     *
+     * @param size - size of unsigned number up to 64 bits
+     * @param offset - offset of unsigned number
+     * @param increment - increment value
+     * @return result value
+     */
+    Single<Long> incrementAndGetUnsigned(int size, long offset, long increment);
+
+    /**
+     * Returns byte number at specified <code>offset</code>
+     *
+     * @param offset - offset of number
+     * @return number
+     */
+    Single<Byte> getByte(long offset);
+
+    /**
+     * Returns previous value of byte number and replaces it
+     * with defined <code>value</code> at specified <code>offset</code>
+     *
+     * @param offset - offset of number
+     * @param value - value of number
+     * @return previous value of number
+     */
+    Single<Byte> setByte(long offset, byte value);
+
+    /**
+     * Increments current byte value on defined <code>increment</code> value at specified <code>offset</code>
+     * and returns result.
+     *
+     * @param offset - offset of number
+     * @param increment - increment value
+     * @return result value
+     */
+    Single<Byte> incrementAndGetByte(long offset, byte increment);
+
+    /**
+     * Returns short number at specified <code>offset</code>
+     *
+     * @param offset - offset of number
+     * @return number
+     */
+    Single<Short> getShort(long offset);
+
+    /**
+     * Returns previous value of short number and replaces it
+     * with defined <code>value</code> at specified <code>offset</code>
+     *
+     * @param offset - offset of number
+     * @param value - value of number
+     * @return previous value of number
+     */
+    Single<Short> setShort(long offset, short value);
+
+    /**
+     * Increments current short value on defined <code>increment</code> value at specified <code>offset</code>
+     * and returns result.
+     *
+     * @param offset - offset of number
+     * @param increment - increment value
+     * @return result value
+     */
+    Single<Short> incrementAndGetShort(long offset, short increment);
+
+    /**
+     * Returns integer number at specified <code>offset</code>
+     *
+     * @param offset - offset of number
+     * @return number
+     */
+    Single<Integer> getInteger(long offset);
+
+    /**
+     * Returns previous value of integer number and replaces it
+     * with defined <code>value</code> at specified <code>offset</code>
+     *
+     * @param offset - offset of number
+     * @param value - value of number
+     * @return previous value of number
+     */
+    Single<Integer> setInteger(long offset, int value);
+
+    /**
+     * Increments current integer value on defined <code>increment</code> value at specified <code>offset</code>
+     * and returns result.
+     *
+     * @param offset - offset of number
+     * @param increment - increment value
+     * @return result value
+     */
+    Single<Integer> incrementAndGetInteger(long offset, int increment);
+
+    /**
+     * Returns long number at specified <code>offset</code>
+     *
+     * @param offset - offset of number
+     * @return number
+     */
+    Single<Long> getLong(long offset);
+
+    /**
+     * Returns previous value of long number and replaces it
+     * with defined <code>value</code> at specified <code>offset</code>
+     *
+     * @param offset - offset of number
+     * @param value - value of number
+     * @return previous value of number
+     */
+    Single<Long> setLong(long offset, long value);
+
+    /**
+     * Increments current long value on defined <code>increment</code> value at specified <code>offset</code>
+     * and returns result.
+     *
+     * @param offset - offset of number
+     * @param increment - increment value
+     * @return result value
+     */
+    Single<Long> incrementAndGetLong(long offset, long increment);
+    
     Single<byte[]> toByteArray();
 
     /**

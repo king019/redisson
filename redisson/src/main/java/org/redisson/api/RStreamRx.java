@@ -1,5 +1,5 @@
 /**
- * Copyright (c) 2013-2019 Nikita Koksharov
+ * Copyright (c) 2013-2021 Nikita Koksharov
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -19,8 +19,9 @@ import java.util.List;
 import java.util.Map;
 import java.util.concurrent.TimeUnit;
 
-import io.reactivex.Completable;
-import io.reactivex.Single;
+import io.reactivex.rxjava3.core.Completable;
+import io.reactivex.rxjava3.core.Single;
+import org.redisson.api.stream.*;
 
 /**
  * Reactive interface for Redis Stream object.
@@ -63,6 +64,16 @@ public interface RStreamRx<K, V> extends RExpirableRx {
     Completable removeGroup(String groupName);
 
     /**
+     * Creates consumer of the group by name.
+     * <p>
+     * Requires <b>Redis 6.2.0 and higher.</b>
+     *
+     * @param groupName - name of group
+     * @param consumerName - name of consumer
+     */
+    Completable createConsumer(String groupName, String consumerName);
+
+    /**
      * Removes consumer of the group by name.
      * 
      * @param groupName - name of group
@@ -90,11 +101,17 @@ public interface RStreamRx<K, V> extends RExpirableRx {
     Single<Long> ack(String groupName, StreamMessageId... ids);
     
     /**
-     * Returns pending messages by group name
+     * Returns common info about pending messages by group name.
      * 
      * @param groupName - name of group
      * @return result object
      */
+    Single<PendingResult> getPendingInfo(String groupName);
+
+    /*
+     * Use #getPendingInfo method
+     */
+    @Deprecated
     Single<PendingResult> listPending(String groupName);
 
     /**
@@ -127,7 +144,93 @@ public interface RStreamRx<K, V> extends RExpirableRx {
      * @return list
      */
     Single<List<PendingEntry>> listPending(String groupName, String consumerName, StreamMessageId startId, StreamMessageId endId, int count);
-    
+
+    /**
+     * Returns list of common info about pending messages by group name.
+     * Limited by minimum idle time, messages count, start and end Stream Message IDs.
+     * <p>
+     * {@link StreamMessageId#MAX} is used as max Stream Message ID
+     * {@link StreamMessageId#MIN} is used as min Stream Message ID
+     * <p>
+     * Requires <b>Redis 6.2.0 and higher.</b>
+     *
+     * @see #pendingRange
+     *
+     * @param groupName - name of group
+     * @param startId - start Stream Message ID
+     * @param idleTime - minimum idle time of messages
+     * @param idleTimeUnit - idle time unit
+     * @param endId - end Stream Message ID
+     * @param count - amount of messages
+     * @return list
+     */
+    Single<List<PendingEntry>> listPending(String groupName, StreamMessageId startId, StreamMessageId endId, long idleTime, TimeUnit idleTimeUnit, int count);
+
+    /**
+     * Returns list of common info about pending messages by group and consumer name.
+     * Limited by minimum idle time, messages count, start and end Stream Message IDs.
+     * <p>
+     * {@link StreamMessageId#MAX} is used as max Stream Message ID
+     * {@link StreamMessageId#MIN} is used as min Stream Message ID
+     * <p>
+     * Requires <b>Redis 6.2.0 and higher.</b>
+     *
+     * @see #pendingRange
+     *
+     * @param consumerName - name of consumer
+     * @param groupName - name of group
+     * @param startId - start Stream Message ID
+     * @param endId - end Stream Message ID
+     * @param idleTime - minimum idle time of messages
+     * @param idleTimeUnit - idle time unit
+     * @param count - amount of messages
+     * @return list
+     */
+    Single<List<PendingEntry>> listPending(String groupName, String consumerName, StreamMessageId startId, StreamMessageId endId, long idleTime, TimeUnit idleTimeUnit, int count);
+
+    /**
+     * Returns stream data of pending messages by group name.
+     * Limited by minimum idle time, messages count, start and end Stream Message IDs.
+     * <p>
+     * {@link StreamMessageId#MAX} is used as max Stream Message ID
+     * {@link StreamMessageId#MIN} is used as min Stream Message ID
+     * <p>
+     * Requires <b>Redis 6.2.0 and higher.</b>
+     *
+     * @see #listPending
+     *
+     * @param groupName - name of group
+     * @param startId - start Stream Message ID
+     * @param endId - end Stream Message ID
+     * @param idleTime - minimum idle time of messages
+     * @param idleTimeUnit - idle time unit
+     * @param count - amount of messages
+     * @return map
+     */
+    Single<Map<StreamMessageId, Map<K, V>>> pendingRange(String groupName, StreamMessageId startId, StreamMessageId endId, long idleTime, TimeUnit idleTimeUnit, int count);
+
+    /**
+     * Returns stream data of pending messages by group and customer name.
+     * Limited by minimum idle time, messages count, start and end Stream Message IDs.
+     * <p>
+     * {@link StreamMessageId#MAX} is used as max Stream Message ID
+     * {@link StreamMessageId#MIN} is used as min Stream Message ID
+     * <p>
+     * Requires <b>Redis 6.2.0 and higher.</b>
+     *
+     * @see #listPending
+     *
+     * @param consumerName - name of consumer
+     * @param groupName - name of group
+     * @param startId - start Stream Message ID
+     * @param endId - end Stream Message ID
+     * @param idleTime - minimum idle time of messages
+     * @param idleTimeUnit - idle time unit
+     * @param count - amount of messages
+     * @return map
+     */
+    Single<Map<StreamMessageId, Map<K, V>>> pendingRange(String groupName, String consumerName, StreamMessageId startId, StreamMessageId endId, long idleTime, TimeUnit idleTimeUnit, int count);
+
     /**
      * Transfers ownership of pending messages by id to a new consumer 
      * by name if idle time of messages is greater than defined value. 
@@ -140,214 +243,176 @@ public interface RStreamRx<K, V> extends RExpirableRx {
      * @return stream data mapped by Stream ID
      */
     Single<Map<StreamMessageId, Map<K, V>>> claim(String groupName, String consumerName, long idleTime, TimeUnit idleTimeUnit, StreamMessageId... ids);
-    
+
     /**
-     * Read stream data from <code>groupName</code> by <code>consumerName</code> and specified collection of Stream IDs.
-     * 
+     * Transfers ownership of pending messages by id to a new consumer
+     * by name if idle time of messages and startId are greater than defined value.
+     *
      * @param groupName - name of group
      * @param consumerName - name of consumer
-     * @param ids - collection of Stream IDs
+     * @param idleTime - minimum idle time of messages
+     * @param idleTimeUnit - idle time unit
+     * @param startId - start Stream Message ID
      * @return stream data mapped by Stream ID
      */
+    Single<AutoClaimResult<K, V>> autoClaim(String groupName, String consumerName, long idleTime, TimeUnit idleTimeUnit, StreamMessageId startId, int count);
+
+    /**
+     * Transfers ownership of pending messages by id to a new consumer
+     * by name if idle time of messages and startId are greater than defined value.
+     *
+     * @param groupName - name of group
+     * @param consumerName - name of consumer
+     * @param idleTime - minimum idle time of messages
+     * @param idleTimeUnit - idle time unit
+     * @param startId - start Stream Message ID
+     * @return list of Stream Message IDs
+     */
+    Single<FastAutoClaimResult> fastAutoClaim(String groupName, String consumerName, long idleTime, TimeUnit idleTimeUnit, StreamMessageId startId, int count);
+
+    /**
+     * Read stream data from consumer group and multiple streams including current.
+     * <p>
+     * Usage examples:
+     * <pre>
+     * Map result = stream.read("group1", "consumer1",  StreamMultiReadGroupArgs.greaterThan(id, "stream2", id2));
+     * </pre>
+     * <pre>
+     * Map result = stream.read("group1", "consumer1", StreamMultiReadGroupArgs.greaterThan(id, "stream2", id2)
+     *                                                                          .count(100)
+     *                                                                          .timeout(Duration.ofSeconds(5))));
+     * </pre>
+     *
+     * @param args - method arguments object
+     * @return stream data mapped by stream name and Stream Message ID
+     */
+    Single<Map<String, Map<StreamMessageId, Map<K, V>>>> readGroup(String groupName, String consumerName, StreamMultiReadGroupArgs args);
+
+    /**
+     * Read stream data from consumer group and current stream only.
+     * <p>
+     * Usage examples:
+     * <pre>
+     * Map result = stream.read("group1", "consumer1",  StreamReadGroupArgs.greaterThan(id));
+     * </pre>
+     * <pre>
+     * Map result = stream.read("group1", "consumer1", StreamReadGroupArgs.greaterThan(id)
+     *                                                                          .count(100)
+     *                                                                          .timeout(Duration.ofSeconds(5))));
+     * </pre>
+     *
+     * @param args - method arguments object
+     * @return stream data mapped by Stream Message ID
+     */
+    Single<Map<StreamMessageId, Map<K, V>>> readGroup(String groupName, String consumerName, StreamReadGroupArgs args);
+
+    /*
+     * Use readGroup(String, String, StreamReadGroupArgs) method instead
+     *
+     */
+    @Deprecated
     Single<Map<StreamMessageId, Map<K, V>>> readGroup(String groupName, String consumerName, StreamMessageId... ids);
     
-    /**
-     * Read stream data from <code>groupName</code> by <code>consumerName</code> and specified collection of Stream IDs.
-     * 
-     * @param groupName - name of group
-     * @param consumerName - name of consumer
-     * @param count - stream data size limit
-     * @param ids - collection of Stream IDs
-     * @return stream data mapped by Stream ID
+    /*
+     * Use readGroup(String, String, StreamReadGroupArgs) method instead
+     *
      */
+    @Deprecated
     Single<Map<StreamMessageId, Map<K, V>>> readGroup(String groupName, String consumerName, int count, StreamMessageId... ids);
 
-    /**
-     * Read stream data from <code>groupName</code> by <code>consumerName</code> and specified collection of Stream IDs. 
-     * Wait for stream data availability for specified <code>timeout</code> interval.
-     * 
-     * @param groupName - name of group
-     * @param consumerName - name of consumer
-     * @param timeout - time interval to wait for stream data availability
-     * @param unit - time interval unit
-     * @param ids - collection of Stream IDs
-     * @return stream data mapped by Stream ID
+    /*
+     * Use readGroup(String, String, StreamReadGroupArgs) method instead
+     *
      */
+    @Deprecated
     Single<Map<StreamMessageId, Map<K, V>>> readGroup(String groupName, String consumerName, long timeout, TimeUnit unit, StreamMessageId... ids);
     
-    /**
-     * Read stream data from <code>groupName</code> by <code>consumerName</code> and specified collection of Stream IDs. 
-     * Wait for stream data availability for specified <code>timeout</code> interval.
-     * 
-     * @param groupName - name of group
-     * @param consumerName - name of consumer
-     * @param count - stream data size limit
-     * @param timeout - time interval to wait for stream data availability
-     * @param unit - time interval unit
-     * @param ids - collection of Stream IDs
-     * @return stream data mapped by Stream ID
+    /*
+     * Use readGroup(String, String, StreamReadGroupArgs) method instead
+     *
      */
+    @Deprecated
     Single<Map<StreamMessageId, Map<K, V>>> readGroup(String groupName, String consumerName, int count, long timeout, TimeUnit unit, StreamMessageId... ids);
 
-    /**
-     * Read stream data from <code>groupName</code> by <code>consumerName</code>, starting by specified message ids for this and other streams.
-     * 
-     * @param groupName - name of group
-     * @param consumerName - name of consumer
-     * @param id - starting message id for this stream
-     * @param nameToId - Stream Message ID mapped by stream name
-     * @return stream data mapped by key and Stream Message ID
+    /*
+     * Use readGroup(String, String, StreamMultiReadGroupArgs) method instead
+     *
      */
+    @Deprecated
     Single<Map<String, Map<StreamMessageId, Map<K, V>>>> readGroup(String groupName, String consumerName, StreamMessageId id, Map<String, StreamMessageId> nameToId);
     
-    /**
-     * Read stream data from <code>groupName</code> by <code>consumerName</code>, starting by specified message ids for this and other streams.
-     * 
-     * @param groupName - name of group
-     * @param consumerName - name of consumer
-     * @param count - stream data size limit
-     * @param id - starting message id for this stream
-     * @param nameToId - Stream Message ID mapped by stream name
-     * @return stream data mapped by key and Stream Message ID
+    /*
+     * Use readGroup(String, String, StreamMultiReadGroupArgs) method instead
+     *
      */
+    @Deprecated
     Single<Map<String, Map<StreamMessageId, Map<K, V>>>> readGroup(String groupName, String consumerName, int count, StreamMessageId id, Map<String, StreamMessageId> nameToId);
 
-    /**
-     * Read stream data from <code>groupName</code> by <code>consumerName</code>, starting by specified message ids for this and other streams.
-     * Waits for the first stream data availability for specified <code>timeout</code> interval.
-     * 
-     * @param groupName - name of group
-     * @param consumerName - name of consumer
-     * @param count - stream data size limit
-     * @param timeout - time interval to wait for stream data availability
-     * @param unit - time interval unit
-     * @param id - starting message id for this stream
-     * @param key2 - name of second stream
-     * @param id2 - starting message id for second stream
-     * @return stream data mapped by key and Stream Message ID
+    /*
+     * Use readGroup(String, String, StreamMultiReadGroupArgs) method instead
+     *
      */
+    @Deprecated
     Single<Map<String, Map<StreamMessageId, Map<K, V>>>> readGroup(String groupName, String consumerName, int count, long timeout, TimeUnit unit, StreamMessageId id, String key2, StreamMessageId id2);
 
-    /**
-     * Read stream data from <code>groupName</code> by <code>consumerName</code>, starting by specified message ids for this and other streams.
-     * Waits for the first stream data availability for specified <code>timeout</code> interval.
-     * 
-     * @param groupName - name of group
-     * @param consumerName - name of consumer
-     * @param count - stream data size limit
-     * @param timeout - time interval to wait for stream data availability
-     * @param unit - time interval unit
-     * @param id - starting message id for this stream
-     * @param key2 - name of second stream
-     * @param id2 - starting message id for second stream
-     * @param key3 - name of third stream
-     * @param id3 - starting message id for third stream
-     * @return stream data mapped by key and Stream Message ID
+    /*
+     * Use readGroup(String, String, StreamMultiReadGroupArgs) method instead
+     *
      */
+    @Deprecated
     Single<Map<String, Map<StreamMessageId, Map<K, V>>>> readGroup(String groupName, String consumerName, int count, long timeout, TimeUnit unit, StreamMessageId id,
             String key2, StreamMessageId id2, String key3, StreamMessageId id3);
     
-    /**
-     * Read stream data from <code>groupName</code> by <code>consumerName</code>, starting by specified message ids for this and other streams.
-     * Waits for the first stream data availability for specified <code>timeout</code> interval.
-     * 
-     * @param groupName - name of group
-     * @param consumerName - name of consumer
-     * @param timeout - time interval to wait for stream data availability
-     * @param unit - time interval unit
-     * @param id - starting message id for this stream
-     * @param nameToId - Stream Message ID mapped by stream name
-     * @return stream data mapped by key and Stream Message ID
+    /*
+     * Use readGroup(String, String, StreamMultiReadGroupArgs) method instead
+     *
      */
+    @Deprecated
     Single<Map<String, Map<StreamMessageId, Map<K, V>>>> readGroup(String groupName, String consumerName, long timeout, TimeUnit unit, StreamMessageId id, Map<String, StreamMessageId> nameToId);
     
-    /**
-     * Read stream data from <code>groupName</code> by <code>consumerName</code>, starting by specified message ids for this and other streams.
-     * 
-     * @param groupName - name of group
-     * @param consumerName - name of consumer
-     * @param id - starting message id for this stream
-     * @param key2 - name of second stream
-     * @param id2 - starting message id for second stream
-     * @return stream data mapped by key and Stream Message ID
+    /*
+     * Use readGroup(String, String, StreamMultiReadGroupArgs) method instead
+     *
      */
+    @Deprecated
     Single<Map<String, Map<StreamMessageId, Map<K, V>>>> readGroup(String groupName, String consumerName, StreamMessageId id, String key2, StreamMessageId id2);
 
-    /**
-     * Read stream data from <code>groupName</code> by <code>consumerName</code>, starting by specified message ids for this and other streams.
-     * 
-     * @param groupName - name of group
-     * @param consumerName - name of consumer
-     * @param id - starting message id for this stream
-     * @param key2 - name of second stream
-     * @param id2  - starting message id for second stream
-     * @param key3 - name of third stream
-     * @param id3  - starting message id for third stream
-     * @return stream data mapped by key and Stream Message ID
+    /*
+     * Use readGroup(String, String, StreamMultiReadGroupArgs) method instead
+     *
      */
+    @Deprecated
     Single<Map<String, Map<StreamMessageId, Map<K, V>>>> readGroup(String groupName, String consumerName, StreamMessageId id, String key2, StreamMessageId id2, String key3,
             StreamMessageId id3);
 
-    /**
-     * Read stream data from <code>groupName</code> by <code>consumerName</code>, starting by specified message ids for this and other streams.
-     * 
-     * @param groupName - name of group
-     * @param consumerName - name of consumer
-     * @param count - stream data size limit
-     * @param id - starting message id for this stream
-     * @param key2 - name of second stream
-     * @param id2  - starting message id for second stream
-     * @return stream data mapped by key and Stream Message ID
+    /*
+     * Use readGroup(String, String, StreamMultiReadGroupArgs) method instead
+     *
      */
+    @Deprecated
     Single<Map<String, Map<StreamMessageId, Map<K, V>>>> readGroup(String groupName, String consumerName, int count, StreamMessageId id, String key2, StreamMessageId id2);
 
-    /**
-     * Read stream data from <code>groupName</code> by <code>consumerName</code>, starting by specified message ids for this and other streams.
-     * 
-     * @param groupName - name of group
-     * @param consumerName - name of consumer
-     * @param count - stream data size limit
-     * @param id - starting message id for this stream
-     * @param key2 - name of second stream
-     * @param id2 - starting message id for second stream
-     * @param key3 - name of third stream
-     * @param id3 - starting message id for third stream
-     * @return stream data mapped by key and Stream Message ID
+    /*
+     * Use readGroup(String, String, StreamMultiReadGroupArgs) method instead
+     *
      */
+    @Deprecated
     Single<Map<String, Map<StreamMessageId, Map<K, V>>>> readGroup(String groupName, String consumerName, int count, StreamMessageId id, String key2, StreamMessageId id2,
             String key3, StreamMessageId id3);
 
-    /**
-     * Read stream data from <code>groupName</code> by <code>consumerName</code>, starting by specified message ids for this and other streams.
-     * Waits for the first stream data availability for specified <code>timeout</code> interval.
-     * 
-     * @param groupName - name of group
-     * @param consumerName - name of consumer
-     * @param timeout - time interval to wait for stream data availability
-     * @param unit - time interval unit
-     * @param id - starting message id for this stream
-     * @param key2 - name of second stream
-     * @param id2 - starting message id for second stream
-     * @return stream data mapped by key and Stream Message ID
+    /*
+     * Use readGroup(String, String, StreamMultiReadGroupArgs) method instead
+     *
      */
+    @Deprecated
     Single<Map<String, Map<StreamMessageId, Map<K, V>>>> readGroup(String groupName, String consumerName, long timeout, TimeUnit unit, StreamMessageId id,
             String key2, StreamMessageId id2);
 
-    /**
-     * Read stream data from <code>groupName</code> by <code>consumerName</code>, starting by specified message ids for this and other streams.
-     * Waits for the first stream data availability for specified <code>timeout</code> interval.
-     * 
-     * @param groupName - name of group
-     * @param consumerName - name of consumer
-     * @param timeout - time interval to wait for stream data availability
-     * @param unit - time interval unit
-     * @param id - starting message id for this stream
-     * @param key2 - name of second stream
-     * @param id2 - starting message id for second stream
-     * @param key3 - name of third stream
-     * @param id3 - starting message id for third stream
-     * @return stream data mapped by key and Stream Message ID
+    /*
+     * Use readGroup(String, String, StreamMultiReadGroupArgs) method instead
+     *
      */
+    @Deprecated
     Single<Map<String, Map<StreamMessageId, Map<K, V>>>> readGroup(String groupName, String consumerName, long timeout, TimeUnit unit, StreamMessageId id,
             String key2, StreamMessageId id2, String key3, StreamMessageId id3);
     
@@ -359,283 +424,245 @@ public interface RStreamRx<K, V> extends RExpirableRx {
     Single<Long> size();
 
     /**
-     * Appends a new entry and returns generated Stream ID
-     * 
-     * @param key - key of entry
-     * @param value - value of entry
-     * @return Stream ID
+     * Appends a new entry/entries and returns generated Stream Message ID
+     * <p>
+     * Usage examples:
+     * <pre>
+     * StreamMessageId id = stream.add(StreamAddArgs.entry(15, 37));
+     * </pre>
+     * <pre>
+     * StreamMessageId id = stream.add(StreamAddArgs.entries(15, 37, 23, 43)
+     *                                 .trim(TrimStrategy.MAXLEN, 100)));
+     * </pre>
+     *
+     * @param args - method arguments object
+     * @return Stream Message ID
      */
+    Single<StreamMessageId> add(StreamAddArgs<K, V> args);
+
+    /**
+     * Appends a new entry/entries by specified Stream Message ID
+     * <p>
+     * Usage examples:
+     * <pre>
+     * stream.add(id, StreamAddArgs.entry(15, 37));
+     * </pre>
+     * <pre>
+     * stream.add(id, StreamAddArgs.entries(15, 37, 23, 43)
+     *                                 .trim(TrimStrategy.MAXLEN, 100)));
+     * </pre>
+     *
+     * @param id - Stream Message ID
+     * @param args - method arguments object
+     */
+    Completable add(StreamMessageId id, StreamAddArgs<K, V> args);
+
+    /*
+     * Use add(StreamAddArgs) method instead
+     *
+     */
+    @Deprecated
     Single<StreamMessageId> add(K key, V value);
     
-    /**
-     * Appends a new entry by specified Stream ID
-     * 
-     * @param id - Stream ID
-     * @param key - key of entry
-     * @param value - value of entry
-     * @return void
+    /*
+     * Use add(StreamMessageId, StreamAddArgs) method instead
+     *
      */
+    @Deprecated
     Completable add(StreamMessageId id, K key, V value);
     
-    /**
-     * Appends a new entry and returns generated Stream ID.
-     * Trims stream to a specified <code>trimLen</code> size.
-     * If <code>trimStrict</code> is <code>false</code> then trims to few tens of entries more than specified length to trim.
-     * 
-     * @param key - key of entry
-     * @param value - value of entry
-     * @param trimLen - length to trim
-     * @param trimStrict - if <code>false</code> then trims to few tens of entries more than specified length to trim
-     * @return Stream ID
+    /*
+     * Use add(StreamAddArgs) method instead
+     *
      */
+    @Deprecated
     Single<StreamMessageId> add(K key, V value, int trimLen, boolean trimStrict);
 
-    /**
-     * Appends a new entry by specified Stream ID.
-     * Trims stream to a specified <code>trimLen</code> size.
-     * If <code>trimStrict</code> is <code>false</code> then trims to few tens of entries more than specified length to trim.
-     * 
-     * @param id - Stream ID
-     * @param key - key of entry
-     * @param value - value of entry
-     * @param trimLen - length to trim
-     * @param trimStrict - if <code>false</code> then trims to few tens of entries more than specified length to trim
-     * @return void
+    /*
+     * Use add(StreamMessageId, StreamAddArgs) method instead
+     *
      */
+    @Deprecated
     Completable add(StreamMessageId id, K key, V value, int trimLen, boolean trimStrict);
     
-    /**
-     * Appends new entries and returns generated Stream ID
-     * 
-     * @param entries - entries to add
-     * @return Stream ID
+    /*
+     * Use add(StreamAddArgs) method instead
+     *
      */
+    @Deprecated
     Single<StreamMessageId> addAll(Map<K, V> entries);
     
-    /**
-     * Appends new entries by specified Stream ID
-     * 
-     * @param id - Stream ID
-     * @param entries - entries to add
-     * @return void
+    /*
+     * Use add(StreamMessageId, StreamAddArgs) method instead
+     *
      */
+    @Deprecated
     Completable addAll(StreamMessageId id, Map<K, V> entries);
     
-    /**
-     * Appends new entries and returns generated Stream ID.
-     * Trims stream to a specified <code>trimLen</code> size.
-     * If <code>trimStrict</code> is <code>false</code> then trims to few tens of entries more than specified length to trim.
-     * 
-     * @param entries - entries to add
-     * @param trimLen - length to trim
-     * @param trimStrict - if <code>false</code> then trims to few tens of entries more than specified length to trim
-     * @return Stream ID
+    /*
+     * Use add(StreamAddArgs) method instead
+     *
      */
+    @Deprecated
     Single<StreamMessageId> addAll(Map<K, V> entries, int trimLen, boolean trimStrict);
 
-    /**
-     * Appends new entries by specified Stream ID.
-     * Trims stream to a specified <code>trimLen</code> size.
-     * If <code>trimStrict</code> is <code>false</code> then trims to few tens of entries more than specified length to trim.
-     * 
-     * @param id - Stream ID
-     * @param entries - entries to add
-     * @param trimLen - length to trim
-     * @param trimStrict - if <code>false</code> then trims to few tens of entries more than specified length to trim
-     * @return void
+    /*
+     * Use add(StreamMessageId, StreamAddArgs) method instead
+     *
      */
+    @Deprecated
     Completable addAll(StreamMessageId id, Map<K, V> entries, int trimLen, boolean trimStrict);
-    
+
     /**
-     * Read stream data by specified collection of Stream IDs.
-     * 
-     * @param ids - collection of Stream IDs
-     * @return stream data mapped by Stream ID
+     * Read stream data from multiple streams including current.
+     * <p>
+     * Usage examples:
+     * <pre>
+     * Map result = stream.read(StreamMultiReadArgs.greaterThan(id, "stream2", id2));
+     * </pre>
+     * <pre>
+     * Map result = stream.read(StreamMultiReadArgs.greaterThan(id, "stream2", id2)
+     *                                 .count(100)
+     *                                 .timeout(Duration.ofSeconds(5))));
+     * </pre>
+     *
+     * @param args - method arguments object
+     * @return stream data mapped by stream name and Stream Message ID
      */
+    Single<Map<String, Map<StreamMessageId, Map<K, V>>>> read(StreamMultiReadArgs args);
+
+    /**
+     * Read stream data from current stream only.
+     * <p>
+     * Usage examples:
+     * <pre>
+     * Map result = stream.read(StreamReadArgs.greaterThan(id));
+     * </pre>
+     * <pre>
+     * Map result = stream.read(StreamReadArgs.greaterThan(id)
+     *                                 .count(100)
+     *                                 .timeout(Duration.ofSeconds(5))));
+     * </pre>
+     *
+     * @param args - method arguments object
+     * @return stream data mapped by Stream Message ID
+     */
+    Single<Map<StreamMessageId, Map<K, V>>> read(StreamReadArgs args);
+
+    /*
+     * Use read(StreamReadArgs) method instead
+     *
+     */
+    @Deprecated
     Single<Map<StreamMessageId, Map<K, V>>> read(StreamMessageId... ids);
     
-    /**
-     * Read stream data by specified collection of Stream IDs.
-     * 
-     * @param count - stream data size limit
-     * @param ids - collection of Stream IDs
-     * @return stream data mapped by Stream ID
+    /*
+     * Use read(StreamReadArgs) method instead
+     *
      */
+    @Deprecated
     Single<Map<StreamMessageId, Map<K, V>>> read(int count, StreamMessageId... ids);
 
-    /**
-     * Read stream data by specified collection of Stream IDs. 
-     * Wait for stream data availability for specified <code>timeout</code> interval.
-     * 
-     * @param timeout - time interval to wait for stream data availability
-     * @param unit - time interval unit
-     * @param ids - collection of Stream IDs
-     * @return stream data mapped by Stream ID
+    /*
+     * Use read(StreamReadArgs) method instead
+     *
      */
+    @Deprecated
     Single<Map<StreamMessageId, Map<K, V>>> read(long timeout, TimeUnit unit, StreamMessageId... ids);
     
-    /**
-     * Read stream data by specified collection of Stream IDs. 
-     * Wait for stream data availability for specified <code>timeout</code> interval.
-     * 
-     * @param count - stream data size limit
-     * @param timeout - time interval to wait for stream data availability
-     * @param unit - time interval unit
-     * @param ids - collection of Stream IDs
-     * @return stream data mapped by Stream ID
+    /*
+     * Use read(StreamReadArgs) method instead
+     *
      */
+    @Deprecated
     Single<Map<StreamMessageId, Map<K, V>>> read(int count, long timeout, TimeUnit unit, StreamMessageId... ids);
 
-    /**
-     * Read stream data by specified stream name including this stream.
-     * 
-     * @param id - id of this stream
-     * @param name2 - name of second stream
-     * @param id2 - id of second stream
-     * @return stream data mapped by key and Stream ID
+    /*
+     * Use read(StreamMultiReadArgs) method instead
+     *
      */
+    @Deprecated
     Single<Map<String, Map<StreamMessageId, Map<K, V>>>> read(StreamMessageId id, String name2, StreamMessageId id2);
 
-    /**
-     * Read stream data by specified stream names including this stream.
-     * 
-     * @param id - id of this stream
-     * @param name2 - name of second stream
-     * @param id2 - id of second stream
-     * @param name3 - name of third stream
-     * @param id3 - id of third stream
-     * @return stream data mapped by key and Stream ID
+    /*
+     * Use read(StreamMultiReadArgs) method instead
+     *
      */
+    @Deprecated
     Single<Map<String, Map<StreamMessageId, Map<K, V>>>> read(StreamMessageId id, String name2, StreamMessageId id2, String name3, StreamMessageId id3);
     
-    /**
-     * Read stream data by specified stream id mapped by name including this stream.
-     * 
-     * @param id - id of this stream
-     * @param nameToId - stream id mapped by name
-     * @return stream data mapped by key and Stream ID
+    /*
+     * Use read(StreamMultiReadArgs) method instead
+     *
      */
+    @Deprecated
     Single<Map<String, Map<StreamMessageId, Map<K, V>>>> read(StreamMessageId id, Map<String, StreamMessageId> nameToId);
 
-    /**
-     * Read stream data by specified stream name including this stream.
-     * 
-     * @param count - stream data size limit
-     * @param id - id of this stream
-     * @param name2 - name of second stream
-     * @param id2 - id of second stream
-     * @return stream data mapped by key and Stream ID
+    /*
+     * Use read(StreamMultiReadArgs) method instead
+     *
      */
+    @Deprecated
     Single<Map<String, Map<StreamMessageId, Map<K, V>>>> read(int count, StreamMessageId id, String name2, StreamMessageId id2);
 
-    /**
-     * Read stream data by specified stream names including this stream.
-     * 
-     * @param count - stream data size limit
-     * @param id - id of this stream
-     * @param name2 - name of second stream
-     * @param id2 - id of second stream
-     * @param name3 - name of third stream
-     * @param id3 - id of third stream
-     * @return stream data mapped by key and Stream ID
+    /*
+     * Use read(StreamMultiReadArgs) method instead
+     *
      */
+    @Deprecated
     Single<Map<String, Map<StreamMessageId, Map<K, V>>>> read(int count, StreamMessageId id, String name2, StreamMessageId id2, String name3, StreamMessageId id3);
     
-    /**
-     * Read stream data by specified stream id mapped by name including this stream.
-     * 
-     * @param count - stream data size limit
-     * @param id - id of this stream
-     * @param nameToId - stream id mapped by name
-     * @return stream data mapped by key and Stream ID
+    /*
+     * Use read(StreamMultiReadArgs) method instead
+     *
      */
+    @Deprecated
     Single<Map<String, Map<StreamMessageId, Map<K, V>>>> read(int count, StreamMessageId id, Map<String, StreamMessageId> nameToId);
 
-    /**
-     * Read stream data by specified stream name including this stream.
-     * Wait for the first stream data availability for specified <code>timeout</code> interval.
-     * 
-     * @param timeout - time interval to wait for stream data availability
-     * @param unit - time interval unit
-     * @param id - id of this stream
-     * @param name2 - name of second stream
-     * @param id2 - id of second stream
-     * @return stream data mapped by key and Stream ID
+    /*
+     * Use read(StreamMultiReadArgs) method instead
+     *
      */
+    @Deprecated
     Single<Map<String, Map<StreamMessageId, Map<K, V>>>> read(long timeout, TimeUnit unit, StreamMessageId id, String name2, StreamMessageId id2);
 
-    /**
-     * Read stream data by specified stream names including this stream.
-     * Wait for the first stream data availability for specified <code>timeout</code> interval.
-     * 
-     * @param timeout - time interval to wait for stream data availability
-     * @param unit - time interval unit
-     * @param id - id of this stream
-     * @param name2 - name of second stream
-     * @param id2 - id of second stream
-     * @param name3 - name of third stream
-     * @param id3 - id of third stream
-     * @return stream data mapped by key and Stream ID
+    /*
+     * Use read(StreamMultiReadArgs) method instead
+     *
      */
+    @Deprecated
     Single<Map<String, Map<StreamMessageId, Map<K, V>>>> read(long timeout, TimeUnit unit, StreamMessageId id, String name2, StreamMessageId id2, String name3, StreamMessageId id3);
     
-    /**
-     * Read stream data by specified stream id mapped by name including this stream.
-     * Wait for the first stream data availability for specified <code>timeout</code> interval.
-     * 
-     * @param timeout - time interval to wait for stream data availability
-     * @param unit - time interval unit
-     * @param id - id of this stream
-     * @param nameToId - stream id mapped by name
-     * @return stream data mapped by key and Stream ID
+    /*
+     * Use read(StreamMultiReadArgs) method instead
+     *
      */
+    @Deprecated
     Single<Map<String, Map<StreamMessageId, Map<K, V>>>> read(long timeout, TimeUnit unit, StreamMessageId id, Map<String, StreamMessageId> nameToId);
 
-    /**
-     * Read stream data by specified stream name including this stream.
-     * Wait for the first stream data availability for specified <code>timeout</code> interval.
-     * 
-     * @param count - stream data size limit
-     * @param timeout - time interval to wait for stream data availability
-     * @param unit - time interval unit
-     * @param id - id of this stream
-     * @param name2 - name of second stream
-     * @param id2 - id of second stream
-     * @return stream data mapped by key and Stream ID
+    /*
+     * Use read(StreamMultiReadArgs) method instead
+     *
      */
+    @Deprecated
     Single<Map<String, Map<StreamMessageId, Map<K, V>>>> read(int count, long timeout, TimeUnit unit, StreamMessageId id, String name2, StreamMessageId id2);
 
-    /**
-     * Read stream data by specified stream names including this stream.
-     * Wait for the first stream data availability for specified <code>timeout</code> interval.
-     * 
-     * @param count - stream data size limit
-     * @param timeout - time interval to wait for stream data availability
-     * @param unit - time interval unit
-     * @param id - id of this stream
-     * @param name2 - name of second stream
-     * @param id2 - id of second stream
-     * @param name3 - name of third stream
-     * @param id3 - id of third stream
-     * @return stream data mapped by key and Stream ID
+    /*
+     * Use read(StreamMultiReadArgs) method instead
+     *
      */
+    @Deprecated
     Single<Map<String, Map<StreamMessageId, Map<K, V>>>> read(int count, long timeout, TimeUnit unit, StreamMessageId id, String name2, StreamMessageId id2, String name3, StreamMessageId id3);
     
-    /**
-     * Read stream data by specified stream id mapped by name including this stream.
-     * Wait for the first stream data availability for specified <code>timeout</code> interval.
-     * 
-     * @param count - stream data size limit
-     * @param timeout - time interval to wait for stream data availability
-     * @param unit - time interval unit
-     * @param id - id of this stream
-     * @param nameToId - stream id mapped by name
-     * @return stream data mapped by key and Stream ID
+    /*
+     * Use read(StreamMultiReadArgs) method instead
+     *
      */
+    @Deprecated
     Single<Map<String, Map<StreamMessageId, Map<K, V>>>> read(int count, long timeout, TimeUnit unit, StreamMessageId id, Map<String, StreamMessageId> nameToId);
     
     /**
-     * Read stream data in range by specified start Stream ID (included) and end Stream ID (included).
+     * Returns stream data in range by specified start Stream ID (included) and end Stream ID (included).
      * 
      * @param startId - start Stream ID
      * @param endId - end Stream ID
@@ -644,7 +671,7 @@ public interface RStreamRx<K, V> extends RExpirableRx {
     Single<Map<StreamMessageId, Map<K, V>>> range(StreamMessageId startId, StreamMessageId endId);
 
     /**
-     * Read stream data in range by specified start Stream ID (included) and end Stream ID (included).
+     * Returns stream data in range by specified start Stream ID (included) and end Stream ID (included).
      * 
      * @param count - stream data size limit
      * @param startId - start Stream ID
@@ -654,7 +681,7 @@ public interface RStreamRx<K, V> extends RExpirableRx {
     Single<Map<StreamMessageId, Map<K, V>>> range(int count, StreamMessageId startId, StreamMessageId endId);
     
     /**
-     * Read stream data in reverse order in range by specified start Stream ID (included) and end Stream ID (included).
+     * Returns stream data in reverse order in range by specified start Stream ID (included) and end Stream ID (included).
      * 
      * @param startId - start Stream ID
      * @param endId - end Stream ID
@@ -663,7 +690,7 @@ public interface RStreamRx<K, V> extends RExpirableRx {
     Single<Map<StreamMessageId, Map<K, V>>> rangeReversed(StreamMessageId startId, StreamMessageId endId);
     
     /**
-     * Read stream data in reverse order in range by specified start Stream ID (included) and end Stream ID (included).
+     * Returns stream data in reverse order in range by specified start Stream ID (included) and end Stream ID (included).
      * 
      * @param count - stream data size limit
      * @param startId - start Stream ID
@@ -695,7 +722,35 @@ public interface RStreamRx<K, V> extends RExpirableRx {
      * @return number of deleted messages
      */
     Single<Long> trimNonStrict(int size);
-    
+
+    /**
+     * Trims stream to specified size
+     *
+     * @param strategy - trim strategy
+     * @param threshold - new size of stream
+     * @return number of deleted messages
+     */
+    Single<Long> trim(TrimStrategy strategy, int threshold);
+
+    /**
+     * Trims stream using almost exact trimming threshold.
+     *
+     * @param strategy - trim strategy
+     * @param threshold - trim threshold
+     * @return number of deleted messages
+     */
+    Single<Long> trimNonStrict(TrimStrategy strategy, int threshold);
+
+    /**
+     * Trims stream using almost exact trimming threshold up to limit.
+     *
+     * @param strategy - trim strategy
+     * @param threshold - trim threshold
+     * @param limit - trim limit
+     * @return number of deleted messages
+     */
+    Single<Long> trimNonStrict(TrimStrategy strategy, int threshold, int limit);
+
     /**
      * Returns information about this stream.
      * 
@@ -717,5 +772,40 @@ public interface RStreamRx<K, V> extends RExpirableRx {
      * @return list of info objects
      */
     Single<List<StreamConsumer>> listConsumers(String groupName);
+    
+    /**
+     * Returns stream data of pending messages by group name.
+     * Limited by start Stream Message ID and end Stream Message ID and count.
+     * <p>
+     * {@link StreamMessageId#MAX} is used as max Stream Message ID
+     * {@link StreamMessageId#MIN} is used as min Stream Message ID
+     * 
+     * @see #listPending
+     * 
+     * @param groupName - name of group
+     * @param startId - start Stream Message ID
+     * @param endId - end Stream Message ID
+     * @param count - amount of messages
+     * @return map
+     */
+    Single<Map<StreamMessageId, Map<K, V>>> pendingRange(String groupName, StreamMessageId startId, StreamMessageId endId, int count);
+    
+    /**
+     * Returns stream data of pending messages by group and customer name.
+     * Limited by start Stream Message ID and end Stream Message ID and count.
+     * <p>
+     * {@link StreamMessageId#MAX} is used as max Stream Message ID
+     * {@link StreamMessageId#MIN} is used as min Stream Message ID
+     * 
+     * @see #listPending
+     * 
+     * @param consumerName - name of consumer
+     * @param groupName - name of group
+     * @param startId - start Stream Message ID
+     * @param endId - end Stream Message ID
+     * @param count - amount of messages
+     * @return map
+     */
+    Single<Map<StreamMessageId, Map<K, V>>> pendingRange(String groupName, String consumerName, StreamMessageId startId, StreamMessageId endId, int count);
     
 }

@@ -1,5 +1,5 @@
 /**
- * Copyright (c) 2013-2019 Nikita Koksharov
+ * Copyright (c) 2013-2021 Nikita Koksharov
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -22,9 +22,9 @@ import java.util.concurrent.atomic.AtomicLong;
 import org.redisson.RedissonMap;
 import org.redisson.client.RedisClient;
 
-import io.reactivex.Flowable;
-import io.reactivex.functions.LongConsumer;
-import io.reactivex.processors.ReplayProcessor;
+import io.reactivex.rxjava3.core.Flowable;
+import io.reactivex.rxjava3.functions.LongConsumer;
+import io.reactivex.rxjava3.processors.ReplayProcessor;
 
 /**
  * 
@@ -68,7 +68,7 @@ public class RedissonMapRxIterator<K, V, M> {
             };
             
             protected void nextValues() {
-                map.scanIteratorAsync(map.getName(), client, nextIterPos, pattern, count).onComplete((res, e) -> {
+                map.scanIteratorAsync(map.getRawName(), client, nextIterPos, pattern, count).onComplete((res, e) -> {
                     if (e != null) {
                         p.onError(e);
                         return;
@@ -83,7 +83,7 @@ public class RedissonMapRxIterator<K, V, M> {
                     client = res.getRedisClient();
                     nextIterPos = res.getPos();
                     
-                    for (Entry<Object, Object> entry : res.getMap().entrySet()) {
+                    for (Entry<Object, Object> entry : res.getValues()) {
                         M val = getValue(entry);
                         p.onNext(val);
                         elementsRead.incrementAndGet();

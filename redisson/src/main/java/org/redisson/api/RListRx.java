@@ -1,5 +1,5 @@
 /**
- * Copyright (c) 2013-2019 Nikita Koksharov
+ * Copyright (c) 2013-2021 Nikita Koksharov
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -18,10 +18,10 @@ package org.redisson.api;
 import java.util.Collection;
 import java.util.List;
 
-import io.reactivex.Completable;
-import io.reactivex.Flowable;
-import io.reactivex.Maybe;
-import io.reactivex.Single;
+import io.reactivex.rxjava3.core.Completable;
+import io.reactivex.rxjava3.core.Flowable;
+import io.reactivex.rxjava3.core.Maybe;
+import io.reactivex.rxjava3.core.Single;
 
 /**
  *  list functions
@@ -164,5 +164,24 @@ public interface RListRx<V> extends RCollectionRx<V>, RSortableRx<List<V>> {
      * @return void
      */
     Completable fastRemove(int index);
+
+    /**
+     * Returns range of values from 0 index to <code>toIndex</code>. Indexes are zero based. 
+     * <code>-1</code> means the last element, <code>-2</code> means penultimate and so on.
+     * 
+     * @param toIndex - end index
+     * @return elements
+     */
+    Single<List<V>> range(int toIndex);
+    
+    /**
+     * Returns range of values from <code>fromIndex</code> to <code>toIndex</code> index including.
+     * Indexes are zero based. <code>-1</code> means the last element, <code>-2</code> means penultimate and so on.
+     * 
+     * @param fromIndex - start index
+     * @param toIndex - end index
+     * @return elements
+     */
+    Single<List<V>> range(int fromIndex, int toIndex);
     
 }

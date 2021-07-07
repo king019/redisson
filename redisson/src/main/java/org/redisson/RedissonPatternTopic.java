@@ -1,5 +1,5 @@
 /**
- * Copyright (c) 2013-2019 Nikita Koksharov
+ * Copyright (c) 2013-2021 Nikita Koksharov
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -15,9 +15,6 @@
  */
 package org.redisson;
 
-import java.util.Collections;
-import java.util.List;
-
 import org.redisson.api.RFuture;
 import org.redisson.api.RPatternTopic;
 import org.redisson.api.listener.PatternMessageListener;
@@ -26,6 +23,7 @@ import org.redisson.client.ChannelName;
 import org.redisson.client.RedisPubSubListener;
 import org.redisson.client.RedisTimeoutException;
 import org.redisson.client.codec.Codec;
+import org.redisson.client.protocol.pubsub.PubSubType;
 import org.redisson.command.CommandAsyncExecutor;
 import org.redisson.config.MasterSlaveServersConfig;
 import org.redisson.misc.RPromise;
@@ -33,6 +31,10 @@ import org.redisson.misc.RedissonPromise;
 import org.redisson.pubsub.AsyncSemaphore;
 import org.redisson.pubsub.PubSubConnectionEntry;
 import org.redisson.pubsub.PublishSubscribeService;
+
+import java.util.Collection;
+import java.util.Collections;
+import java.util.List;
 
 /**
  * Distributed topic implementation. Messages are delivered to all message listeners across Redis cluster.
@@ -72,7 +74,7 @@ public class RedissonPatternTopic implements RPatternTopic {
     }
 
     private int addListener(RedisPubSubListener<?> pubSubListener) {
-        RFuture<PubSubConnectionEntry> future = subscribeService.psubscribe(channelName, codec, pubSubListener);
+        RFuture<Collection<PubSubConnectionEntry>> future = subscribeService.psubscribe(channelName, codec, pubSubListener);
         commandExecutor.syncSubscription(future);
         return System.identityHashCode(pubSubListener);
     }
@@ -90,7 +92,7 @@ public class RedissonPatternTopic implements RPatternTopic {
     }
     
     private RFuture<Integer> addListenerAsync(RedisPubSubListener<?> pubSubListener) {
-        RFuture<PubSubConnectionEntry> future = subscribeService.subscribe(codec, channelName, pubSubListener);
+        RFuture<Collection<PubSubConnectionEntry>> future = subscribeService.psubscribe(channelName, codec, pubSubListener);
         RPromise<Integer> result = new RedissonPromise<Integer>();
         future.onComplete((res, e) -> {
             if (e != null) {
@@ -111,46 +113,14 @@ public class RedissonPatternTopic implements RPatternTopic {
         }
     }
     
-    
+    @Override
     public RFuture<Void> removeListenerAsync(int listenerId) {
-        RPromise<Void> result = new RedissonPromise<>();
-        AsyncSemaphore semaphore = subscribeService.getSemaphore(channelName);
-        semaphore.acquire(() -> {
-            PubSubConnectionEntry entry = subscribeService.getPubSubEntry(channelName);
-            if (entry == null) {
-                semaphore.release();
-                result.trySuccess(null);
-                return;
-            }
-            
-            entry.removeListener(channelName, listenerId);
-            if (!entry.hasListeners(channelName)) {
-                subscribeService.punsubscribe(channelName, semaphore);
-            } else {
-                semaphore.release();
-                result.trySuccess(null);
-            }
-        });
-        return result;
+        return subscribeService.removeListenerAsync(PubSubType.PUNSUBSCRIBE, channelName, listenerId);
     }
     
     @Override
     public void removeListener(int listenerId) {
-        AsyncSemaphore semaphore = subscribeService.getSemaphore(channelName);
-        acquire(semaphore);
-
-        PubSubConnectionEntry entry = subscribeService.getPubSubEntry(channelName);
-        if (entry == null) {
-            semaphore.release();
-            return;
-        }
-        
-        entry.removeListener(channelName, listenerId);
-        if (!entry.hasListeners(channelName)) {
-            subscribeService.punsubscribe(channelName, semaphore);
-        } else {
-            semaphore.release();
-        }
+        commandExecutor.syncSubscription(removeListenerAsync(listenerId));
     }
     
     @Override
@@ -164,31 +134,16 @@ public class RedissonPatternTopic implements RPatternTopic {
             return;
         }
 
-        if (entry.removeAllListeners(channelName)) {
-            subscribeService.punsubscribe(channelName, semaphore);
-        } else {
-            semaphore.release();
+        if (entry.hasListeners(channelName)) {
+            subscribeService.unsubscribe(PubSubType.PUNSUBSCRIBE, channelName).syncUninterruptibly();
         }
+        semaphore.release();
     }
 
     @Override
     public void removeListener(PatternMessageListener<?> listener) {
-        AsyncSemaphore semaphore = subscribeService.getSemaphore(channelName);
-        acquire(semaphore);
-        
-        PubSubConnectionEntry entry = subscribeService.getPubSubEntry(channelName);
-        if (entry == null) {
-            semaphore.release();
-            return;
-        }
-
-        entry.removeListener(channelName, listener);
-        if (!entry.hasListeners(channelName)) {
-            subscribeService.punsubscribe(channelName, semaphore);
-        } else {
-            semaphore.release();
-        }
-
+        RFuture<Void> future = subscribeService.removeListenerAsync(PubSubType.PUNSUBSCRIBE, channelName, listener);
+        commandExecutor.syncSubscription(future);
     }
     
     @Override

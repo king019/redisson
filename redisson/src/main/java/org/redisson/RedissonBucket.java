@@ -1,5 +1,5 @@
 /**
- * Copyright (c) 2013-2019 Nikita Koksharov
+ * Copyright (c) 2013-2021 Nikita Koksharov
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -15,14 +15,21 @@
  */
 package org.redisson;
 
-import java.util.Collections;
-import java.util.concurrent.TimeUnit;
-
+import org.redisson.api.ObjectListener;
 import org.redisson.api.RBucket;
 import org.redisson.api.RFuture;
+import org.redisson.api.RPatternTopic;
+import org.redisson.api.listener.SetObjectListener;
 import org.redisson.client.codec.Codec;
+import org.redisson.client.codec.StringCodec;
 import org.redisson.client.protocol.RedisCommands;
 import org.redisson.command.CommandAsyncExecutor;
+import org.redisson.misc.CountableListener;
+import org.redisson.misc.RPromise;
+import org.redisson.misc.RedissonPromise;
+
+import java.util.Collections;
+import java.util.concurrent.TimeUnit;
 
 /**
  * 
@@ -56,22 +63,22 @@ public class RedissonBucket<V> extends RedissonExpirable implements RBucket<V> {
         }
 
         if (update == null) {
-            return commandExecutor.evalWriteAsync(getName(), codec, RedisCommands.EVAL_BOOLEAN,
+            return commandExecutor.evalWriteAsync(getRawName(), codec, RedisCommands.EVAL_BOOLEAN,
                     "if redis.call('get', KEYS[1]) == ARGV[1] then "
                             + "redis.call('del', KEYS[1]); "
                             + "return 1 "
                           + "else "
                             + "return 0 end",
-                    Collections.singletonList(getName()), encode(expect));
+                    Collections.singletonList(getRawName()), encode(expect));
         }
 
-        return commandExecutor.evalWriteAsync(getName(), codec, RedisCommands.EVAL_BOOLEAN,
+        return commandExecutor.evalWriteAsync(getRawName(), codec, RedisCommands.EVAL_BOOLEAN,
                 "if redis.call('get', KEYS[1]) == ARGV[1] then "
                      + "redis.call('set', KEYS[1], ARGV[2]); "
                      + "return 1 "
                    + "else "
                      + "return 0 end",
-                Collections.singletonList(getName()), encode(expect), encode(update));
+                Collections.singletonList(getRawName()), encode(expect), encode(update));
     }
 
     @Override
@@ -82,14 +89,14 @@ public class RedissonBucket<V> extends RedissonExpirable implements RBucket<V> {
     @Override
     public RFuture<V> getAndSetAsync(V newValue) {
         if (newValue == null) {
-            return commandExecutor.evalWriteAsync(getName(), codec, RedisCommands.EVAL_OBJECT,
+            return commandExecutor.evalWriteAsync(getRawName(), codec, RedisCommands.EVAL_OBJECT,
                     "local v = redis.call('get', KEYS[1]); "
                     + "redis.call('del', KEYS[1]); "
                     + "return v",
-                    Collections.singletonList(getName()));
+                    Collections.singletonList(getRawName()));
         }
 
-        return commandExecutor.writeAsync(getName(), codec, RedisCommands.GETSET, getName(), encode(newValue));
+        return commandExecutor.writeAsync(getRawName(), codec, RedisCommands.GETSET, getRawName(), encode(newValue));
     }
 
     @Override
@@ -99,7 +106,7 @@ public class RedissonBucket<V> extends RedissonExpirable implements RBucket<V> {
 
     @Override
     public RFuture<V> getAsync() {
-        return commandExecutor.readAsync(getName(), codec, RedisCommands.GET, getName());
+        return commandExecutor.readAsync(getRawName(), codec, RedisCommands.GET, getRawName());
     }
     
     @Override
@@ -109,11 +116,11 @@ public class RedissonBucket<V> extends RedissonExpirable implements RBucket<V> {
     
     @Override
     public RFuture<V> getAndDeleteAsync() {
-        return commandExecutor.evalWriteAsync(getName(), codec, RedisCommands.EVAL_OBJECT,
+        return commandExecutor.evalWriteAsync(getRawName(), codec, RedisCommands.EVAL_OBJECT,
                    "local currValue = redis.call('get', KEYS[1]); "
                  + "redis.call('del', KEYS[1]); "
                  + "return currValue; ",
-                Collections.singletonList(getName()));
+                Collections.singletonList(getRawName()));
     }
     
     @Override
@@ -123,7 +130,7 @@ public class RedissonBucket<V> extends RedissonExpirable implements RBucket<V> {
     
     @Override
     public RFuture<Long> sizeAsync() {
-        return commandExecutor.readAsync(getName(), codec, RedisCommands.STRLEN, getName());
+        return commandExecutor.readAsync(getRawName(), codec, RedisCommands.STRLEN, getRawName());
     }
 
     @Override
@@ -134,10 +141,10 @@ public class RedissonBucket<V> extends RedissonExpirable implements RBucket<V> {
     @Override
     public RFuture<Void> setAsync(V value) {
         if (value == null) {
-            return commandExecutor.writeAsync(getName(), RedisCommands.DEL_VOID, getName());
+            return commandExecutor.writeAsync(getRawName(), RedisCommands.DEL_VOID, getRawName());
         }
 
-        return commandExecutor.writeAsync(getName(), codec, RedisCommands.SET, getName(), encode(value));
+        return commandExecutor.writeAsync(getRawName(), codec, RedisCommands.SET, getRawName(), encode(value));
     }
 
     @Override
@@ -148,19 +155,19 @@ public class RedissonBucket<V> extends RedissonExpirable implements RBucket<V> {
     @Override
     public RFuture<Void> setAsync(V value, long timeToLive, TimeUnit timeUnit) {
         if (value == null) {
-            return commandExecutor.writeAsync(getName(), RedisCommands.DEL_VOID, getName());
+            return commandExecutor.writeAsync(getRawName(), RedisCommands.DEL_VOID, getRawName());
         }
 
-        return commandExecutor.writeAsync(getName(), codec, RedisCommands.PSETEX, getName(), timeUnit.toMillis(timeToLive), encode(value));
+        return commandExecutor.writeAsync(getRawName(), codec, RedisCommands.PSETEX, getRawName(), timeUnit.toMillis(timeToLive), encode(value));
     }
 
     @Override
     public RFuture<Boolean> trySetAsync(V value) {
         if (value == null) {
-            return commandExecutor.readAsync(getName(), codec, RedisCommands.NOT_EXISTS, getName());
+            return commandExecutor.readAsync(getRawName(), codec, RedisCommands.NOT_EXISTS, getRawName());
         }
 
-        return commandExecutor.writeAsync(getName(), codec, RedisCommands.SETNX, getName(), encode(value));
+        return commandExecutor.writeAsync(getRawName(), codec, RedisCommands.SETNX, getRawName(), encode(value));
     }
 
     @Override
@@ -168,7 +175,7 @@ public class RedissonBucket<V> extends RedissonExpirable implements RBucket<V> {
         if (value == null) {
             throw new IllegalArgumentException("Value can't be null");
         }
-        return commandExecutor.writeAsync(getName(), codec, RedisCommands.SETPXNX, getName(), encode(value), "PX", timeUnit.toMillis(timeToLive), "NX");
+        return commandExecutor.writeAsync(getRawName(), codec, RedisCommands.SET_BOOLEAN, getRawName(), encode(value), "PX", timeUnit.toMillis(timeToLive), "NX");
     }
 
     @Override
@@ -182,18 +189,102 @@ public class RedissonBucket<V> extends RedissonExpirable implements RBucket<V> {
     }
 
     @Override
+    public boolean setIfExists(V value) {
+        return get(setIfExistsAsync(value));
+    }
+
+    @Override
+    public RFuture<Boolean> setIfExistsAsync(V value) {
+        if (value == null) {
+            return commandExecutor.evalWriteAsync(getRawName(), codec, RedisCommands.EVAL_BOOLEAN,
+                  "local currValue = redis.call('get', KEYS[1]); " +
+                        "if currValue ~= false then " +
+                            "redis.call('del', KEYS[1]); " +
+                            "return 1;" +
+                        "end;" +
+                        "return 0; ",
+                    Collections.singletonList(getRawName()));
+        }
+
+        return commandExecutor.writeAsync(getRawName(), codec, RedisCommands.SET_BOOLEAN, getRawName(), encode(value), "XX");
+    }
+
+    @Override
+    public void setAndKeepTTL(V value) {
+        get(setAndKeepTTLAsync(value));
+    }
+
+    @Override
+    public RFuture<Void> setAndKeepTTLAsync(V value) {
+        if (value == null) {
+            return commandExecutor.writeAsync(getRawName(), RedisCommands.DEL_VOID, getRawName());
+        }
+
+        return commandExecutor.writeAsync(getRawName(), codec, RedisCommands.SET, getRawName(), encode(value), "KEEPTTL");
+    }
+
+    @Override
+    public boolean setIfExists(V value, long timeToLive, TimeUnit timeUnit) {
+        return get(setIfExistsAsync(value, timeToLive, timeUnit));
+    }
+
+    @Override
+    public RFuture<Boolean> setIfExistsAsync(V value, long timeToLive, TimeUnit timeUnit) {
+        if (value == null) {
+            throw new IllegalArgumentException("Value can't be null");
+        }
+
+        return commandExecutor.writeAsync(getRawName(), codec, RedisCommands.SET_BOOLEAN, getRawName(), encode(value), "PX", timeUnit.toMillis(timeToLive), "XX");
+    }
+
+    @Override
     public RFuture<V> getAndSetAsync(V value, long timeToLive, TimeUnit timeUnit) {
-        return commandExecutor.evalWriteAsync(getName(), codec, RedisCommands.EVAL_OBJECT,
+        return commandExecutor.evalWriteAsync(getRawName(), codec, RedisCommands.EVAL_OBJECT,
                 "local currValue = redis.call('get', KEYS[1]); "
               + "redis.call('psetex', KEYS[1], ARGV[2], ARGV[1]); "
               + "return currValue; ",
-             Collections.singletonList(getName()),
+             Collections.singletonList(getRawName()),
              encode(value), timeUnit.toMillis(timeToLive));
     }
 
     @Override
     public V getAndSet(V value, long timeToLive, TimeUnit timeUnit) {
         return get(getAndSetAsync(value, timeToLive, timeUnit));
+    }
+
+    @Override
+    public int addListener(ObjectListener listener) {
+        if (listener instanceof SetObjectListener) {
+            return addListener("__keyevent@*:set", (SetObjectListener) listener, SetObjectListener::onSet);
+        }
+        return super.addListener(listener);
+    };
+
+    @Override
+    public RFuture<Integer> addListenerAsync(ObjectListener listener) {
+        if (listener instanceof SetObjectListener) {
+            return addListenerAsync("__keyevent@*:set", (SetObjectListener) listener, SetObjectListener::onSet);
+        }
+        return super.addListenerAsync(listener);
+    }
+
+    @Override
+    public void removeListener(int listenerId) {
+        RPatternTopic expiredTopic = new RedissonPatternTopic(StringCodec.INSTANCE, commandExecutor, "__keyevent@*:set");
+        expiredTopic.removeListener(listenerId);
+
+        super.removeListener(listenerId);
+    }
+
+    @Override
+    public RFuture<Void> removeListenerAsync(int listenerId) {
+        RPromise<Void> result = new RedissonPromise<>();
+        CountableListener<Void> listener = new CountableListener<>(result, null, 3);
+
+        RPatternTopic setTopic = new RedissonPatternTopic(StringCodec.INSTANCE, commandExecutor, "__keyevent@*:set");
+        setTopic.removeListenerAsync(listenerId).onComplete(listener);
+        removeListenersAsync(listenerId, listener);
+        return result;
     }
 
 }

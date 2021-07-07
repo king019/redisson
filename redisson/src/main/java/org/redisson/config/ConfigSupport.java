@@ -1,5 +1,5 @@
 /**
- * Copyright (c) 2013-2019 Nikita Koksharov
+ * Copyright (c) 2013-2021 Nikita Koksharov
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -15,45 +15,35 @@
  */
 package org.redisson.config;
 
-import java.io.File;
-import java.io.FileReader;
-import java.io.IOException;
-import java.io.InputStream;
-import java.io.InputStreamReader;
-import java.io.Reader;
-import java.net.URI;
-import java.net.URL;
-import java.util.List;
-import java.util.Scanner;
-import java.util.UUID;
-import java.util.regex.Matcher;
-import java.util.regex.Pattern;
-
-import org.redisson.api.RedissonNodeInitializer;
-import org.redisson.client.codec.Codec;
-import org.redisson.cluster.ClusterConnectionManager;
-import org.redisson.codec.ReferenceCodecProvider;
-import org.redisson.connection.AddressResolverGroupFactory;
-import org.redisson.connection.ConnectionManager;
-import org.redisson.connection.MasterSlaveConnectionManager;
-import org.redisson.connection.ReplicatedConnectionManager;
-import org.redisson.connection.SentinelConnectionManager;
-import org.redisson.connection.SingleConnectionManager;
-import org.redisson.connection.balancer.LoadBalancer;
-
 import com.fasterxml.jackson.annotation.JsonFilter;
-import com.fasterxml.jackson.annotation.JsonIgnore;
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import com.fasterxml.jackson.annotation.JsonInclude.Include;
 import com.fasterxml.jackson.annotation.JsonProperty;
 import com.fasterxml.jackson.annotation.JsonTypeInfo;
 import com.fasterxml.jackson.core.JsonFactory;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.SerializationFeature;
 import com.fasterxml.jackson.databind.ser.FilterProvider;
 import com.fasterxml.jackson.databind.ser.impl.SimpleBeanPropertyFilter;
 import com.fasterxml.jackson.databind.ser.impl.SimpleFilterProvider;
 import com.fasterxml.jackson.databind.type.TypeFactory;
 import com.fasterxml.jackson.dataformat.yaml.YAMLFactory;
+import org.redisson.api.NameMapper;
+import org.redisson.api.NatMapper;
+import org.redisson.api.RedissonNodeInitializer;
+import org.redisson.client.NettyHook;
+import org.redisson.client.codec.Codec;
+import org.redisson.cluster.ClusterConnectionManager;
+import org.redisson.codec.ReferenceCodecProvider;
+import org.redisson.connection.*;
+import org.redisson.connection.balancer.LoadBalancer;
+
+import java.io.*;
+import java.net.URL;
+import java.util.Scanner;
+import java.util.UUID;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 /**
  * 
@@ -65,38 +55,6 @@ public class ConfigSupport {
     @JsonTypeInfo(use = JsonTypeInfo.Id.CLASS, property = "class")
     @JsonFilter("classFilter")
     public static class ClassMixIn {
-
-    }
-
-    public abstract static class SingleSeverConfigMixIn {
-
-        @JsonProperty
-        List<URI> address;
-
-        @JsonIgnore
-        abstract SingleServerConfig setAddress(String address);
-
-        @JsonIgnore
-        abstract URI getAddress();
-
-        @JsonIgnore
-        abstract void setAddress(URI address);
-
-    }
-
-    public abstract static class MasterSlaveServersConfigMixIn {
-
-        @JsonProperty
-        List<URI> masterAddress;
-
-        @JsonIgnore
-        abstract MasterSlaveServersConfig setMasterAddress(String masterAddress);
-
-        @JsonIgnore
-        abstract URI getMasterAddress();
-
-        @JsonIgnore
-        abstract void setMasterAddress(URI masterAddress);
 
     }
 
@@ -136,11 +94,14 @@ public class ConfigSupport {
     }
     
     private String resolveEnvParams(String content) {
-        Pattern pattern = Pattern.compile("\\$\\{(\\w+(:-.+)?)\\}");
+        Pattern pattern = Pattern.compile("\\$\\{([\\w\\.]+(:-.+?)?)\\}");
         Matcher m = pattern.matcher(content);
         while (m.find()) {
             String[] parts = m.group(1).split(":-");
             String v = System.getenv(parts[0]);
+            if (v == null) {
+                v = System.getProperty(parts[0]);
+            }
             if (v != null) {
                 content = content.replace(m.group(), v);
             } else if (parts.length == 2) {
@@ -217,10 +178,10 @@ public class ConfigSupport {
     public String toYAML(Config config) throws IOException {
         return yamlMapper.writeValueAsString(config);
     }
-    
+
     public static ConnectionManager createConnectionManager(Config configCopy) {
         UUID id = UUID.randomUUID();
-        
+
         if (configCopy.getMasterSlaveServersConfig() != null) {
             validate(configCopy.getMasterSlaveServersConfig());
             return new MasterSlaveConnectionManager(configCopy.getMasterSlaveServersConfig(), configCopy, id);
@@ -264,19 +225,21 @@ public class ConfigSupport {
     private ObjectMapper createMapper(JsonFactory mapping, ClassLoader classLoader) {
         ObjectMapper mapper = new ObjectMapper(mapping);
         
-        mapper.addMixIn(MasterSlaveServersConfig.class, MasterSlaveServersConfigMixIn.class);
-        mapper.addMixIn(SingleServerConfig.class, SingleSeverConfigMixIn.class);
         mapper.addMixIn(Config.class, ConfigMixIn.class);
         mapper.addMixIn(ReferenceCodecProvider.class, ClassMixIn.class);
         mapper.addMixIn(AddressResolverGroupFactory.class, ClassMixIn.class);
         mapper.addMixIn(Codec.class, ClassMixIn.class);
         mapper.addMixIn(RedissonNodeInitializer.class, ClassMixIn.class);
         mapper.addMixIn(LoadBalancer.class, ClassMixIn.class);
-        
+        mapper.addMixIn(NatMapper.class, ClassMixIn.class);
+        mapper.addMixIn(NameMapper.class, ClassMixIn.class);
+        mapper.addMixIn(NettyHook.class, ClassMixIn.class);
+
         FilterProvider filterProvider = new SimpleFilterProvider()
                 .addFilter("classFilter", SimpleBeanPropertyFilter.filterOutAllExcept());
         mapper.setFilterProvider(filterProvider);
         mapper.setSerializationInclusion(Include.NON_NULL);
+        mapper.configure(SerializationFeature.FAIL_ON_EMPTY_BEANS, false);
 
         if (classLoader != null) {
             TypeFactory tf = TypeFactory.defaultInstance()

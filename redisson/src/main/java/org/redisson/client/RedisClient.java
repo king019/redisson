@@ -1,5 +1,5 @@
 /**
- * Copyright (c) 2013-2019 Nikita Koksharov
+ * Copyright (c) 2013-2021 Nikita Koksharov
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -17,7 +17,6 @@ package org.redisson.client;
 
 import java.net.InetAddress;
 import java.net.InetSocketAddress;
-import java.net.URI;
 import java.net.UnknownHostException;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
@@ -28,6 +27,7 @@ import org.redisson.api.RFuture;
 import org.redisson.client.handler.RedisChannelInitializer;
 import org.redisson.client.handler.RedisChannelInitializer.Type;
 import org.redisson.misc.RPromise;
+import org.redisson.misc.RedisURI;
 import org.redisson.misc.RedissonPromise;
 
 import io.netty.bootstrap.Bootstrap;
@@ -63,7 +63,7 @@ public final class RedisClient {
     private final AtomicReference<RFuture<InetSocketAddress>> resolvedAddrFuture = new AtomicReference<RFuture<InetSocketAddress>>();
     private final Bootstrap bootstrap;
     private final Bootstrap pubSubBootstrap;
-    private final URI uri;
+    private final RedisURI uri;
     private InetSocketAddress resolvedAddr;
     private final ChannelGroup channels;
 
@@ -76,6 +76,7 @@ public final class RedisClient {
     private boolean hasOwnExecutor;
     private boolean hasOwnGroup;
     private boolean hasOwnResolver;
+    private volatile boolean shutdown;
 
     public static RedisClient create(RedisClientConfig config) {
         return new RedisClient(config);
@@ -115,7 +116,7 @@ public final class RedisClient {
             resolvedAddrFuture.set(RedissonPromise.newSucceededFuture(resolvedAddr));
         }
         
-        channels = new DefaultChannelGroup(copy.getGroup().next()); 
+        channels = new DefaultChannelGroup(copy.getGroup().next());
         bootstrap = createBootstrap(copy, Type.PLAIN);
         pubSubBootstrap = createBootstrap(copy, Type.PUBSUB);
         
@@ -132,6 +133,7 @@ public final class RedisClient {
         bootstrap.option(ChannelOption.CONNECT_TIMEOUT_MILLIS, config.getConnectTimeout());
         bootstrap.option(ChannelOption.SO_KEEPALIVE, config.isKeepAlive());
         bootstrap.option(ChannelOption.TCP_NODELAY, config.isTcpNoDelay());
+        config.getNettyHook().afterBoostrapInitialization(bootstrap);
         return bootstrap;
     }
     
@@ -151,9 +153,15 @@ public final class RedisClient {
         return config;
     }
 
+    public Timer getTimer() {
+        return timer;
+    }
+    
     public RedisConnection connect() {
         try {
             return connectAsync().syncUninterruptibly().getNow();
+        } catch (RedisException e) {
+            throw e;
         } catch (Exception e) {
             throw new RedisConnectionException("Unable to connect to: " + uri, e);
         }
@@ -191,7 +199,8 @@ public final class RedisClient {
                 }
                 
                 InetSocketAddress resolved = future.getNow();
-                resolvedAddr = createInetSocketAddress(resolved, uri.getHost());
+                byte[] addr = resolved.getAddress().getAddress();
+                resolvedAddr = new InetSocketAddress(InetAddress.getByAddress(uri.getHost(), addr), resolved.getPort());
                 promise.trySuccess(resolvedAddr);
             }
 
@@ -199,15 +208,6 @@ public final class RedisClient {
         return promise;
     }
 
-    private InetSocketAddress createInetSocketAddress(InetSocketAddress resolved, String host) {
-        byte[] addr = NetUtil.createByteArrayFromIpAddressString(resolved.getAddress().getHostAddress());
-        try {
-            return new InetSocketAddress(InetAddress.getByAddress(host, addr), resolved.getPort());
-        } catch (UnknownHostException e) {
-            throw new RuntimeException(e);
-        }
-    }
-    
     public RFuture<RedisConnection> connectAsync() {
         final RPromise<RedisConnection> f = new RedissonPromise<RedisConnection>();
         
@@ -222,6 +222,12 @@ public final class RedisClient {
             channelFuture.addListener(new ChannelFutureListener() {
                 @Override
                 public void operationComplete(final ChannelFuture future) throws Exception {
+                    if (bootstrap.config().group().isShuttingDown()) {
+                        IllegalStateException cause = new IllegalStateException("RedisClient is shutdown");
+                        f.tryFailure(cause);
+                        return;
+                    }
+
                     if (future.isSuccess()) {
                         final RedisConnection c = RedisConnection.getFrom(future.channel());
                         c.getConnectionPromise().onComplete((res, e) -> {
@@ -256,6 +262,8 @@ public final class RedisClient {
     public RedisPubSubConnection connectPubSub() {
         try {
             return connectPubSubAsync().syncUninterruptibly().getNow();
+        } catch (RedisException e) {
+            throw e;
         } catch (Exception e) {
             throw new RedisConnectionException("Unable to connect to: " + uri, e);
         }
@@ -275,6 +283,12 @@ public final class RedisClient {
             channelFuture.addListener(new ChannelFutureListener() {
                 @Override
                 public void operationComplete(final ChannelFuture future) throws Exception {
+                    if (bootstrap.config().group().isShuttingDown()) {
+                        IllegalStateException cause = new IllegalStateException("RedisClient is shutdown");
+                        f.tryFailure(cause);
+                        return;
+                    }
+
                     if (future.isSuccess()) {
                         final RedisPubSubConnection c = RedisPubSubConnection.getFrom(future.channel());
                         c.<RedisPubSubConnection>getConnectionPromise().onComplete((res, e) -> {
@@ -311,14 +325,13 @@ public final class RedisClient {
     }
 
     public RFuture<Void> shutdownAsync() {
-        for (Channel channel : channels) {
-            RedisConnection connection = RedisConnection.getFrom(channel);
-            if (connection != null) {
-                connection.closeAsync();
-            }
+        shutdown = true;
+        RPromise<Void> result = new RedissonPromise<Void>();
+        if (channels.isEmpty() || config.getGroup().isShuttingDown()) {
+            shutdown(result);
+            return result;
         }
-
-        final RPromise<Void> result = new RedissonPromise<Void>();
+        
         ChannelGroupFuture channelsFuture = channels.newCloseFuture();
         channelsFuture.addListener(new FutureListener<Void>() {
             @Override
@@ -328,43 +341,57 @@ public final class RedisClient {
                     return;
                 }
                 
-                if (!hasOwnTimer && !hasOwnExecutor && !hasOwnResolver && !hasOwnGroup) {
-                    result.trySuccess(null);
-                    return;
-                }
-                
-                Thread t = new Thread() {
-                    @Override
-                    public void run() {
-                        try {
-                            if (hasOwnTimer) {
-                                timer.stop();
-                            }
-                            
-                            if (hasOwnExecutor) {
-                                executor.shutdown();
-                                executor.awaitTermination(15, TimeUnit.SECONDS);
-                            }
-                            
-                            if (hasOwnResolver) {
-                                bootstrap.config().resolver().close();
-                            }
-                            if (hasOwnGroup) {
-                                bootstrap.config().group().shutdownGracefully();
-                            }
-                        } catch (Exception e) {
-                            result.tryFailure(e);
-                            return;
-                        }
-                        
-                        result.trySuccess(null);
-                    }
-                };
-                t.start();
+                shutdown(result);
             }
         });
         
+        for (Channel channel : channels) {
+            RedisConnection connection = RedisConnection.getFrom(channel);
+            if (connection != null) {
+                connection.closeAsync();
+            }
+        }
+        
         return result;
+    }
+
+    public boolean isShutdown() {
+        return shutdown;
+    }
+
+    private void shutdown(RPromise<Void> result) {
+        if (!hasOwnTimer && !hasOwnExecutor && !hasOwnResolver && !hasOwnGroup) {
+            result.trySuccess(null);
+        } else {
+            Thread t = new Thread() {
+                @Override
+                public void run() {
+                    try {
+                        if (hasOwnTimer) {
+                            timer.stop();
+                        }
+                        
+                        if (hasOwnExecutor) {
+                            executor.shutdown();
+                            executor.awaitTermination(15, TimeUnit.SECONDS);
+                        }
+                        
+                        if (hasOwnResolver) {
+                            bootstrap.config().resolver().close();
+                        }
+                        if (hasOwnGroup) {
+                            bootstrap.config().group().shutdownGracefully();
+                        }
+                    } catch (Exception e) {
+                        result.tryFailure(e);
+                        return;
+                    }
+                    
+                    result.trySuccess(null);
+                }
+            };
+            t.start();
+        }
     }
 
     @Override

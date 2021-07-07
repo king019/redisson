@@ -1,5 +1,5 @@
 /**
- * Copyright (c) 2013-2019 Nikita Koksharov
+ * Copyright (c) 2013-2021 Nikita Koksharov
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -15,6 +15,10 @@
  */
 package org.redisson.api;
 
+import org.redisson.api.queue.DequeMoveArgs;
+
+import java.util.List;
+
 /**
  * Distributed async implementation of {@link java.util.Deque}
  *
@@ -23,6 +27,22 @@ package org.redisson.api;
  * @param <V> the type of elements held in this collection
  */
 public interface RDequeAsync<V> extends RQueueAsync<V> {
+
+    /**
+     * Adds element at the head of existing deque.
+     *
+     * @param elements - elements to add
+     * @return length of the list
+     */
+    RFuture<Integer> addFirstIfExistsAsync(V... elements);
+
+    /**
+     * Adds element at the tail of existing deque.
+     *
+     * @param elements - elements to add
+     * @return length of the list
+     */
+    RFuture<Integer> addLastIfExistsAsync(V... elements);
 
     /**
      * Removes last occurrence of element <code>o</code>
@@ -143,5 +163,42 @@ public interface RDequeAsync<V> extends RQueueAsync<V> {
      * @return <code>true</code> if element was added to this deque otherwise <code>false</code>
      */
     RFuture<Boolean> offerFirstAsync(V e);
+
+    /**
+     * Retrieves and removes the head elements of this queue.
+     * Elements amount limited by <code>limit</code> param.
+     *
+     * @return list of head elements
+     */
+    RFuture<List<V>> pollFirstAsync(int limit);
+
+    /**
+     * Retrieves and removes the tail elements of this queue.
+     * Elements amount limited by <code>limit</code> param.
+     *
+     * @return list of tail elements
+     */
+    RFuture<List<V>> pollLastAsync(int limit);
+
+    /**
+     * Move element from this deque to the given destination deque.
+     * Returns moved element.
+     * <p>
+     * Usage examples:
+     * <pre>
+     * V element = deque.move(DequeMoveArgs.pollLast()
+     *                                 .addFirstTo("deque2"));
+     * </pre>
+     * <pre>
+     * V elements = deque.move(DequeMoveArgs.pollFirst()
+     *                                 .addLastTo("deque2"));
+     * </pre>
+     * <p>
+     * Requires <b>Redis 6.2.0 and higher.</b>
+     *
+     * @param args - arguments object
+     * @return moved element
+     */
+    RFuture<V> moveAsync(DequeMoveArgs args);
 
 }

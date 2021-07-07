@@ -1,5 +1,5 @@
 /**
- * Copyright (c) 2013-2019 Nikita Koksharov
+ * Copyright (c) 2013-2021 Nikita Koksharov
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -15,10 +15,11 @@
  */
 package org.redisson.api;
 
-import io.reactivex.Completable;
-import io.reactivex.Flowable;
-import io.reactivex.Maybe;
-import io.reactivex.Single;
+import io.reactivex.rxjava3.core.Completable;
+import io.reactivex.rxjava3.core.Flowable;
+import io.reactivex.rxjava3.core.Maybe;
+import io.reactivex.rxjava3.core.Single;
+import org.redisson.api.queue.DequeMoveArgs;
 
 /**
  * RxJava2 interface for Deque object
@@ -28,6 +29,22 @@ import io.reactivex.Single;
  * @param <V> the type of elements held in this collection
  */
 public interface RDequeRx<V> extends RQueueRx<V> {
+
+    /**
+     * Adds element at the head of existing deque.
+     *
+     * @param elements - elements to add
+     * @return length of the list
+     */
+    Single<Integer> addFirstIfExists(V... elements);
+
+    /**
+     * Adds element at the tail of existing deque.
+     *
+     * @param elements - elements to add
+     * @return length of the list
+     */
+    Single<Integer> addLastIfExists(V... elements);
 
     Flowable<V> descendingIterator();
 
@@ -96,6 +113,22 @@ public interface RDequeRx<V> extends RQueueRx<V> {
     Maybe<V> pollFirst();
 
     /**
+     * Retrieves and removes the tail elements of this queue.
+     * Elements amount limited by <code>limit</code> param.
+     *
+     * @return list of tail elements
+     */
+    Flowable<V> pollLast(int limit);
+
+    /**
+     * Retrieves and removes the head elements of this queue.
+     * Elements amount limited by <code>limit</code> param.
+     *
+     * @return list of head elements
+     */
+    Flowable<V> pollFirst(int limit);
+
+    /**
      * Returns element at the tail of this deque 
      * or <code>null</code> if there are no elements in deque.
      * 
@@ -150,5 +183,26 @@ public interface RDequeRx<V> extends RQueueRx<V> {
      * @return <code>true</code> if element was added to this deque otherwise <code>false</code>
      */
     Single<Boolean> offerFirst(V e);
+
+    /**
+     * Move element from this deque to the given destination deque.
+     * Returns moved element.
+     * <p>
+     * Usage examples:
+     * <pre>
+     * V element = deque.move(DequeMoveArgs.pollLast()
+     *                                 .addFirstTo("deque2"));
+     * </pre>
+     * <pre>
+     * V elements = deque.move(DequeMoveArgs.pollFirst()
+     *                                 .addLastTo("deque2"));
+     * </pre>
+     * <p>
+     * Requires <b>Redis 6.2.0 and higher.</b>
+     *
+     * @param args - arguments object
+     * @return moved element
+     */
+    Maybe<V> move(DequeMoveArgs args);
 
 }

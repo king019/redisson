@@ -1,5 +1,5 @@
 /**
- * Copyright (c) 2013-2019 Nikita Koksharov
+ * Copyright (c) 2013-2021 Nikita Koksharov
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -15,19 +15,8 @@
  */
 package org.redisson.spring.data.connection;
 
-import java.net.InetSocketAddress;
-import java.util.ArrayList;
-import java.util.Arrays;
-import java.util.Collection;
-import java.util.HashMap;
-import java.util.HashSet;
-import java.util.Iterator;
-import java.util.List;
-import java.util.Map;
-import java.util.Map.Entry;
-import java.util.Properties;
-import java.util.Set;
-
+import io.netty.util.CharsetUtil;
+import org.redisson.api.BatchResult;
 import org.redisson.api.RFuture;
 import org.redisson.api.RedissonClient;
 import org.redisson.client.codec.ByteArrayCodec;
@@ -36,9 +25,12 @@ import org.redisson.client.codec.StringCodec;
 import org.redisson.client.protocol.RedisCommand;
 import org.redisson.client.protocol.RedisCommands;
 import org.redisson.client.protocol.RedisStrictCommand;
+import org.redisson.client.protocol.decoder.ObjectDecoder;
 import org.redisson.client.protocol.decoder.ObjectListReplayDecoder;
 import org.redisson.client.protocol.decoder.StringMapDataDecoder;
+import org.redisson.command.CommandBatchService;
 import org.redisson.connection.MasterSlaveEntry;
+import org.springframework.dao.InvalidDataAccessResourceUsageException;
 import org.springframework.data.redis.connection.ClusterInfo;
 import org.springframework.data.redis.connection.RedisClusterConnection;
 import org.springframework.data.redis.connection.RedisClusterNode;
@@ -47,7 +39,10 @@ import org.springframework.data.redis.connection.convert.StringToRedisClientInfo
 import org.springframework.data.redis.core.types.RedisClientInfo;
 import org.springframework.util.Assert;
 
-import io.netty.util.CharsetUtil;
+import java.net.InetSocketAddress;
+import java.util.*;
+import java.util.Map.Entry;
+import java.util.stream.Collectors;
 
 /**
  * 
@@ -57,7 +52,7 @@ import io.netty.util.CharsetUtil;
 public class RedissonClusterConnection extends RedissonConnection implements RedisClusterConnection {
 
     private static final RedisStrictCommand<List<RedisClusterNode>> CLUSTER_NODES = 
-                            new RedisStrictCommand<List<RedisClusterNode>>("CLUSTER", "NODES", new RedisClusterNodeDecoder());
+                            new RedisStrictCommand<List<RedisClusterNode>>("CLUSTER", "NODES", new ObjectDecoder(new RedisClusterNodeDecoder()));
     
     public RedissonClusterConnection(RedissonClient redisson) {
         super(redisson);
@@ -377,4 +372,116 @@ public class RedissonClusterConnection extends RedissonConnection implements Red
         return CONVERTER.convert(list.toArray(new String[list.size()]));
     }
 
+    @Override
+    public void rename(byte[] oldName, byte[] newName) {
+
+        if (isPipelined()) {
+            throw new InvalidDataAccessResourceUsageException("Clustered rename is not supported in a pipeline");
+        }
+
+        if (redisson.getConnectionManager().calcSlot(oldName) == redisson.getConnectionManager().calcSlot(newName)) {
+            super.rename(oldName, newName);
+            return;
+        }
+
+        final byte[] value = dump(oldName);
+
+        if (null != value) {
+
+            final Long sourceTtlInSeconds = ttl(oldName);
+
+            final long ttlInMilliseconds;
+            if (null != sourceTtlInSeconds && sourceTtlInSeconds > 0) {
+                ttlInMilliseconds = sourceTtlInSeconds * 1000;
+            } else {
+                ttlInMilliseconds = 0;
+            }
+
+            restore(newName, ttlInMilliseconds, value);
+            del(oldName);
+        }
+    }
+
+    @Override
+    public Boolean renameNX(byte[] oldName, byte[] newName) {
+        if (isPipelined()) {
+            throw new InvalidDataAccessResourceUsageException("Clustered rename is not supported in a pipeline");
+        }
+
+        if (redisson.getConnectionManager().calcSlot(oldName) == redisson.getConnectionManager().calcSlot(newName)) {
+            return super.renameNX(oldName, newName);
+        }
+
+        final byte[] value = dump(oldName);
+
+        if (null != value && !exists(newName)) {
+
+            final Long sourceTtlInSeconds = ttl(oldName);
+
+            final long ttlInMilliseconds;
+            if (null != sourceTtlInSeconds && sourceTtlInSeconds > 0) {
+                ttlInMilliseconds = sourceTtlInSeconds * 1000;
+            } else {
+                ttlInMilliseconds = 0;
+            }
+
+            restore(newName, ttlInMilliseconds, value);
+            del(oldName);
+
+            return true;
+        }
+
+        return false;
+    }
+
+    @Override
+    public Long del(byte[]... keys) {
+        if (isQueueing() || isPipelined()) {
+            for (byte[] key: keys) {
+                write(key, LongCodec.INSTANCE, RedisCommands.DEL, key);
+            }
+
+            return null;
+        }
+
+        CommandBatchService es = new CommandBatchService(executorService);
+        for (byte[] key: keys) {
+            es.writeAsync(key, LongCodec.INSTANCE, RedisCommands.DEL, key);
+        }
+        BatchResult<Long> b = (BatchResult<Long>) es.execute();
+        return b.getResponses().stream().collect(Collectors.summarizingLong(v -> v)).getSum();
+    }
+
+    @Override
+    public List<byte[]> mGet(byte[]... keys) {
+        if (isQueueing() || isPipelined()) {
+            for (byte[] key : keys) {
+                read(key, ByteArrayCodec.INSTANCE, RedisCommands.GET, key);
+            }
+            return null;
+        }
+
+        CommandBatchService es = new CommandBatchService(executorService);
+        for (byte[] key: keys) {
+            es.readAsync(key, ByteArrayCodec.INSTANCE, RedisCommands.GET, key);
+        }
+        BatchResult<byte[]> r = (BatchResult<byte[]>) es.execute();
+        return r.getResponses();
+    }
+
+    @Override
+    public void mSet(Map<byte[], byte[]> tuple) {
+        if (isQueueing() || isPipelined()) {
+            for (Entry<byte[], byte[]> entry: tuple.entrySet()) {
+                write(entry.getKey(), StringCodec.INSTANCE, RedisCommands.SET, entry.getKey(), entry.getValue());
+            }
+            return;
+        }
+
+        CommandBatchService es = new CommandBatchService(executorService);
+        for (Entry<byte[], byte[]> entry: tuple.entrySet()) {
+            es.writeAsync(entry.getKey(), StringCodec.INSTANCE, RedisCommands.SET, entry.getKey(), entry.getValue());
+        }
+        es.execute();
+    }
 }

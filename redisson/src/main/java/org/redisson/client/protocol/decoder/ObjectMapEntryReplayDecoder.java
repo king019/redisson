@@ -1,5 +1,5 @@
 /**
- * Copyright (c) 2013-2019 Nikita Koksharov
+ * Copyright (c) 2013-2021 Nikita Koksharov
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -15,14 +15,15 @@
  */
 package org.redisson.client.protocol.decoder;
 
+import org.redisson.client.codec.Codec;
+import org.redisson.client.handler.State;
+import org.redisson.client.protocol.Decoder;
+
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Map.Entry;
 import java.util.Set;
-
-import org.redisson.client.handler.State;
-import org.redisson.client.protocol.Decoder;
 
 /**
  * 
@@ -32,8 +33,11 @@ import org.redisson.client.protocol.Decoder;
 public class ObjectMapEntryReplayDecoder implements MultiDecoder<Set<Entry<Object, Object>>> {
 
     @Override
-    public Decoder<Object> getDecoder(int paramNum, State state) {
-        return null;
+    public Decoder<Object> getDecoder(Codec codec, int paramNum, State state) {
+        if (paramNum % 2 != 0) {
+            return codec.getMapValueDecoder();
+        }
+        return codec.getMapKeyDecoder();
     }
 
     @Override

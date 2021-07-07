@@ -1,5 +1,5 @@
 /**
- * Copyright (c) 2013-2019 Nikita Koksharov
+ * Copyright (c) 2013-2021 Nikita Koksharov
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -15,12 +15,13 @@
  */
 package org.redisson.reactive;
 
-import java.util.function.Supplier;
+import java.util.concurrent.Callable;
 
 import org.redisson.api.RFuture;
 import org.redisson.command.CommandAsyncService;
 import org.redisson.connection.ConnectionManager;
 
+import org.redisson.liveobject.core.RedissonObjectBuilder;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 
@@ -31,25 +32,32 @@ import reactor.core.publisher.Mono;
  */
 public class CommandReactiveService extends CommandAsyncService implements CommandReactiveExecutor {
 
-    public CommandReactiveService(ConnectionManager connectionManager) {
-        super(connectionManager);
+    public CommandReactiveService(ConnectionManager connectionManager, RedissonObjectBuilder objectBuilder) {
+        super(connectionManager, objectBuilder, RedissonObjectBuilder.ReferenceType.REACTIVE);
     }
 
     @Override
-    public <R> Mono<R> reactive(Supplier<RFuture<R>> supplier) {
+    public <R> Mono<R> reactive(Callable<RFuture<R>> supplier) {
         return Flux.<R>create(emitter -> {
             emitter.onRequest(n -> {
-                RFuture<R> future = supplier.get();
+                RFuture<R> future;
+                try {
+                    future = supplier.call();
+                } catch (Exception e) {
+                    emitter.error(e);
+                    return;
+                }
+                
+                emitter.onDispose(() -> {
+                    future.cancel(true);
+                });
+
                 future.onComplete((v, e) -> {
                     if (e != null) {
                         emitter.error(e);
                         return;
                     }
 
-                    emitter.onDispose(() -> {
-                        future.cancel(true);
-                    });
-                    
                     if (v != null) {
                         emitter.next(v);
                     }

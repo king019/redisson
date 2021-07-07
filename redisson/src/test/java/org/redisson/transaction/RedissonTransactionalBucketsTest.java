@@ -1,16 +1,16 @@
 package org.redisson.transaction;
 
-import static org.assertj.core.api.Assertions.assertThat;
-
-import java.util.LinkedHashMap;
-import java.util.Map;
-
-import org.junit.Test;
+import org.junit.jupiter.api.Test;
 import org.redisson.BaseTest;
 import org.redisson.api.RBucket;
 import org.redisson.api.RBuckets;
 import org.redisson.api.RTransaction;
 import org.redisson.api.TransactionOptions;
+
+import java.util.LinkedHashMap;
+import java.util.Map;
+
+import static org.assertj.core.api.Assertions.assertThat;
 
 public class RedissonTransactionalBucketsTest extends BaseTest {
 
@@ -63,7 +63,7 @@ public class RedissonTransactionalBucketsTest extends BaseTest {
         bbs1.put("test1", "10");
         bbs1.put("test2", "20");
         assertThat(buckets.trySet(bbs1)).isFalse();
-        assertThat(buckets.delete("test1", "test2")).isEqualTo(2);
+        assertThat(redisson.getKeys().delete("test1", "test2")).isEqualTo(2);
         Map<String, Object> bbs2 = new LinkedHashMap<>();
         bbs2.put("test1", "11");
         bbs2.put("test2", "22");

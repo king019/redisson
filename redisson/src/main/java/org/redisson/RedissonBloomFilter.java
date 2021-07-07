@@ -1,5 +1,5 @@
 /**
- * Copyright (c) 2013-2019 Nikita Koksharov
+ * Copyright (c) 2013-2021 Nikita Koksharov
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -28,30 +28,25 @@
  */
 package org.redisson;
 
+import io.netty.buffer.ByteBuf;
+import org.redisson.api.RBitSetAsync;
+import org.redisson.api.RBloomFilter;
+import org.redisson.api.RFuture;
+import org.redisson.client.RedisException;
+import org.redisson.client.codec.*;
+import org.redisson.client.protocol.RedisCommand;
+import org.redisson.client.protocol.RedisCommands;
+import org.redisson.client.protocol.convertor.VoidReplayConvertor;
+import org.redisson.client.protocol.decoder.ObjectMapReplayDecoder;
+import org.redisson.command.CommandAsyncExecutor;
+import org.redisson.command.CommandBatchService;
+import org.redisson.misc.Hash;
+
 import java.math.BigDecimal;
 import java.util.Arrays;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.TimeUnit;
-
-import org.redisson.api.RBitSetAsync;
-import org.redisson.api.RBloomFilter;
-import org.redisson.api.RFuture;
-import org.redisson.client.RedisException;
-import org.redisson.client.codec.Codec;
-import org.redisson.client.codec.DoubleCodec;
-import org.redisson.client.codec.IntegerCodec;
-import org.redisson.client.codec.LongCodec;
-import org.redisson.client.codec.StringCodec;
-import org.redisson.client.protocol.RedisCommand;
-import org.redisson.client.protocol.RedisCommands;
-import org.redisson.client.protocol.convertor.VoidReplayConvertor;
-import org.redisson.client.protocol.decoder.ObjectMapReplayDecoder;
-import org.redisson.command.CommandBatchService;
-import org.redisson.command.CommandExecutor;
-import org.redisson.misc.Hash;
-
-import io.netty.buffer.ByteBuf;
 
 /**
  * Bloom filter based on Highway 128-bit hash.
@@ -65,19 +60,19 @@ public class RedissonBloomFilter<T> extends RedissonExpirable implements RBloomF
     private volatile long size;
     private volatile int hashIterations;
 
-    private final CommandExecutor commandExecutor;
-    private final String configName;
+    private final CommandAsyncExecutor commandExecutor;
+    private String configName;
 
-    protected RedissonBloomFilter(CommandExecutor commandExecutor, String name) {
+    protected RedissonBloomFilter(CommandAsyncExecutor commandExecutor, String name) {
         super(commandExecutor, name);
         this.commandExecutor = commandExecutor;
-        this.configName = suffixName(getName(), "config");
+        this.configName = suffixName(getRawName(), "config");
     }
 
-    protected RedissonBloomFilter(Codec codec, CommandExecutor commandExecutor, String name) {
+    protected RedissonBloomFilter(Codec codec, CommandAsyncExecutor commandExecutor, String name) {
         super(codec, commandExecutor, name);
         this.commandExecutor = commandExecutor;
-        this.configName = suffixName(getName(), "config");
+        this.configName = suffixName(getRawName(), "config");
     }
 
     private int optimalNumOfHashFunctions(long n, long m) {
@@ -114,14 +109,14 @@ public class RedissonBloomFilter<T> extends RedissonExpirable implements RBloomF
 
             long[] indexes = hash(hashes[0], hashes[1], hashIterations, size);
 
-            CommandBatchService executorService = new CommandBatchService(commandExecutor.getConnectionManager());
+            CommandBatchService executorService = new CommandBatchService(commandExecutor);
             addConfigCheck(hashIterations, size, executorService);
             RBitSetAsync bs = createBitSet(executorService);
             for (int i = 0; i < indexes.length; i++) {
                 bs.setAsync(indexes[i]);
             }
             try {
-                List<Boolean> result = (List<Boolean>) executorService.execute();
+                List<Boolean> result = (List<Boolean>) executorService.execute().getResponses();
 
                 for (Boolean val : result.subList(1, result.size()-1)) {
                     if (!val) {
@@ -130,7 +125,7 @@ public class RedissonBloomFilter<T> extends RedissonExpirable implements RBloomF
                 }
                 return false;
             } catch (RedisException e) {
-                if (!e.getMessage().contains("Bloom filter config has been changed")) {
+                if (e.getMessage() == null || !e.getMessage().contains("Bloom filter config has been changed")) {
                     throw e;
                 }
             }
@@ -165,14 +160,14 @@ public class RedissonBloomFilter<T> extends RedissonExpirable implements RBloomF
 
             long[] indexes = hash(hashes[0], hashes[1], hashIterations, size);
 
-            CommandBatchService executorService = new CommandBatchService(commandExecutor.getConnectionManager());
+            CommandBatchService executorService = new CommandBatchService(commandExecutor);
             addConfigCheck(hashIterations, size, executorService);
             RBitSetAsync bs = createBitSet(executorService);
             for (int i = 0; i < indexes.length; i++) {
                 bs.getAsync(indexes[i]);
             }
             try {
-                List<Boolean> result = (List<Boolean>) executorService.execute();
+                List<Boolean> result = (List<Boolean>) executorService.execute().getResponses();
 
                 for (Boolean val : result.subList(1, result.size()-1)) {
                     if (!val) {
@@ -182,7 +177,7 @@ public class RedissonBloomFilter<T> extends RedissonExpirable implements RBloomF
 
                 return true;
             } catch (RedisException e) {
-                if (!e.getMessage().contains("Bloom filter config has been changed")) {
+                if (e.getMessage() == null || !e.getMessage().contains("Bloom filter config has been changed")) {
                     throw e;
                 }
             }
@@ -190,7 +185,7 @@ public class RedissonBloomFilter<T> extends RedissonExpirable implements RBloomF
     }
 
     protected RBitSetAsync createBitSet(CommandBatchService executorService) {
-        return new RedissonBitSet(executorService, getName());
+        return new RedissonBitSet(executorService, getRawName());
     }
 
     private void addConfigCheck(int hashIterations, long size, CommandBatchService executorService) {
@@ -203,7 +198,7 @@ public class RedissonBloomFilter<T> extends RedissonExpirable implements RBloomF
 
     @Override
     public long count() {
-        CommandBatchService executorService = new CommandBatchService(commandExecutor.getConnectionManager());
+        CommandBatchService executorService = new CommandBatchService(commandExecutor);
         RFuture<Map<String, String>> configFuture = executorService.readAsync(configName, StringCodec.INSTANCE,
                 new RedisCommand<Map<Object, Object>>("HGETALL", new ObjectMapReplayDecoder()), configName);
         RBitSetAsync bs = createBitSet(executorService);
@@ -217,12 +212,12 @@ public class RedissonBloomFilter<T> extends RedissonExpirable implements RBloomF
 
     @Override
     public RFuture<Boolean> deleteAsync() {
-        return commandExecutor.writeAsync(getName(), RedisCommands.DEL_OBJECTS, getName(), configName);
+        return deleteAsync(getRawName(), configName);
     }
 
     @Override
     public RFuture<Long> sizeInMemoryAsync() {
-        List<Object> keys = Arrays.<Object>asList(getName(), configName);
+        List<Object> keys = Arrays.<Object>asList(getRawName(), configName);
         return super.sizeInMemoryAsync(keys);
     }
     
@@ -265,7 +260,7 @@ public class RedissonBloomFilter<T> extends RedissonExpirable implements RBloomF
         }
         hashIterations = optimalNumOfHashFunctions(expectedInsertions, size);
 
-        CommandBatchService executorService = new CommandBatchService(commandExecutor.getConnectionManager());
+        CommandBatchService executorService = new CommandBatchService(commandExecutor);
         executorService.evalReadAsync(configName, codec, RedisCommands.EVAL_VOID,
                 "local size = redis.call('hget', KEYS[1], 'size');" +
                         "local hashIterations = redis.call('hget', KEYS[1], 'hashIterations');" +
@@ -278,7 +273,7 @@ public class RedissonBloomFilter<T> extends RedissonExpirable implements RBloomF
         try {
             executorService.execute();
         } catch (RedisException e) {
-            if (!e.getMessage().contains("Bloom filter config has been changed")) {
+            if (e.getMessage() == null || !e.getMessage().contains("Bloom filter config has been changed")) {
                 throw e;
             }
             readConfig();
@@ -290,52 +285,84 @@ public class RedissonBloomFilter<T> extends RedissonExpirable implements RBloomF
 
     @Override
     public RFuture<Boolean> expireAsync(long timeToLive, TimeUnit timeUnit) {
-        return commandExecutor.evalWriteAsync(getName(), LongCodec.INSTANCE, RedisCommands.EVAL_BOOLEAN,
-                        "redis.call('pexpire', KEYS[1], ARGV[1]); " +
-                        "return redis.call('pexpire', KEYS[2], ARGV[1]); ",
-                Arrays.<Object>asList(getName(), configName),
-                timeUnit.toMillis(timeToLive));
+        return expireAsync(timeToLive, timeUnit, getRawName(), configName);
     }
 
     @Override
-    public RFuture<Boolean> expireAtAsync(long timestamp) {
-        return commandExecutor.evalWriteAsync(getName(), LongCodec.INSTANCE, RedisCommands.EVAL_BOOLEAN,
-                        "redis.call('pexpireat', KEYS[1], ARGV[1]); " +
-                        "return redis.call('pexpireat', KEYS[2], ARGV[1]); ",
-                Arrays.<Object>asList(getName(), configName),
-                timestamp);
+    protected RFuture<Boolean> expireAtAsync(long timestamp, String... keys) {
+        return super.expireAtAsync(timestamp, getRawName(), configName);
     }
 
     @Override
     public RFuture<Boolean> clearExpireAsync() {
-        return commandExecutor.evalWriteAsync(getName(), LongCodec.INSTANCE, RedisCommands.EVAL_BOOLEAN,
-                        "redis.call('persist', KEYS[1]); " +
-                        "return redis.call('persist', KEYS[2]); ",
-                Arrays.<Object>asList(getName(), configName));
+        return clearExpireAsync(getRawName(), configName);
     }
     
     @Override
     public long getExpectedInsertions() {
-        Long result = commandExecutor.read(configName, LongCodec.INSTANCE, RedisCommands.HGET, configName, "expectedInsertions");
+        Long result = get(commandExecutor.readAsync(configName, LongCodec.INSTANCE, RedisCommands.HGET, configName, "expectedInsertions"));
         return check(result);
     }
 
     @Override
     public double getFalseProbability() {
-        Double result = commandExecutor.read(configName, DoubleCodec.INSTANCE, RedisCommands.HGET, configName, "falseProbability");
+        Double result = get(commandExecutor.readAsync(configName, DoubleCodec.INSTANCE, RedisCommands.HGET, configName, "falseProbability"));
         return check(result);
     }
 
     @Override
     public long getSize() {
-        Long result = commandExecutor.read(configName, LongCodec.INSTANCE, RedisCommands.HGET, configName, "size");
+        Long result = get(commandExecutor.readAsync(configName, LongCodec.INSTANCE, RedisCommands.HGET, configName, "size"));
         return check(result);
     }
 
     @Override
     public int getHashIterations() {
-        Integer result = commandExecutor.read(configName, IntegerCodec.INSTANCE, RedisCommands.HGET, configName, "hashIterations");
+        Integer result = get(commandExecutor.readAsync(configName, IntegerCodec.INSTANCE, RedisCommands.HGET, configName, "hashIterations"));
         return check(result);
+    }
+
+    @Override
+    public RFuture<Boolean> isExistsAsync() {
+        return commandExecutor.writeAsync(getRawName(), codec, RedisCommands.EXISTS, getRawName(), configName);
+    }
+
+    @Override
+    public RFuture<Void> renameAsync(String newName) {
+        String newConfigName = suffixName(newName, "config");
+        RFuture<Void> f = commandExecutor.evalWriteAsync(getRawName(), StringCodec.INSTANCE, RedisCommands.EVAL_VOID,
+                     "if redis.call('exists', KEYS[1]) == 1 then " +
+                              "redis.call('rename', KEYS[1], ARGV[1]); " +
+                          "end; " +
+                          "return redis.call('rename', KEYS[2], ARGV[2]); ",
+                Arrays.<Object>asList(getRawName(), configName), newName, newConfigName);
+        f.onComplete((value, e) -> {
+            if (e == null) {
+                setName(newName);
+                this.configName = newConfigName;
+            }
+        });
+        return f;
+    }
+
+    @Override
+    public RFuture<Boolean> renamenxAsync(String newName) {
+        String newConfigName = suffixName(newName, "config");
+        RFuture<Boolean> f = commandExecutor.evalWriteAsync(getRawName(), StringCodec.INSTANCE, RedisCommands.EVAL_BOOLEAN,
+                "local r = redis.call('renamenx', KEYS[1], ARGV[1]); "
+                        + "if r == 0 then "
+                        + "  return 0; "
+                        + "else  "
+                        + "  return redis.call('renamenx', KEYS[2], ARGV[2]); "
+                        + "end; ",
+                Arrays.<Object>asList(getRawName(), configName), newName, newConfigName);
+        f.onComplete((value, e) -> {
+            if (e == null && value) {
+                setName(newName);
+                this.configName = newConfigName;
+            }
+        });
+        return f;
     }
 
     private <V> V check(V result) {

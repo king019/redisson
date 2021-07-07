@@ -1,5 +1,5 @@
 /**
- * Copyright (c) 2013-2019 Nikita Koksharov
+ * Copyright (c) 2013-2021 Nikita Koksharov
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -15,14 +15,13 @@
  */
 package org.redisson.connection.decoder;
 
+import org.redisson.client.handler.State;
+import org.redisson.client.protocol.decoder.MultiDecoder;
+
 import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
-
-import org.redisson.client.handler.State;
-import org.redisson.client.protocol.Decoder;
-import org.redisson.client.protocol.decoder.MultiDecoder;
 
 /**
  * 
@@ -43,11 +42,6 @@ public class MapGetAllDecoder implements MultiDecoder<Map<Object, Object>> {
         this.args = args;
         this.shiftIndex = shiftIndex;
         this.allowNulls = allowNulls;
-    }
-
-    @Override
-    public Decoder<Object> getDecoder(int paramNum, State state) {
-        return null;
     }
 
     @Override

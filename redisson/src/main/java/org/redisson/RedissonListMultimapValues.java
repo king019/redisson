@@ -1,5 +1,5 @@
 /**
- * Copyright (c) 2013-2019 Nikita Koksharov
+ * Copyright (c) 2013-2021 Nikita Koksharov
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -15,6 +15,7 @@
  */
 package org.redisson;
 
+import java.time.Instant;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collection;
@@ -71,7 +72,12 @@ public class RedissonListMultimapValues<V> extends RedissonExpirable implements 
     public RFuture<Boolean> expireAsync(long timeToLive, TimeUnit timeUnit) {
         throw new UnsupportedOperationException("This operation is not supported for SetMultimap values Set");
     }
-    
+
+    @Override
+    public RFuture<Boolean> expireAsync(Instant instant) {
+        throw new UnsupportedOperationException("This operation is not supported for SetMultimap values Set");
+    }
+
     @Override
     public RFuture<Boolean> expireAtAsync(long timestamp) {
         throw new UnsupportedOperationException("This operation is not supported for SetMultimap values Set");
@@ -94,12 +100,12 @@ public class RedissonListMultimapValues<V> extends RedissonExpirable implements 
     
     @Override
     public RFuture<Long> sizeInMemoryAsync() {
-        List<Object> keys = Arrays.<Object>asList(getName(), timeoutSetName);
+        List<Object> keys = Arrays.<Object>asList(getRawName(), timeoutSetName);
         return super.sizeInMemoryAsync(keys);
     }
     
     public RFuture<Boolean> deleteAsync() {
-        return commandExecutor.evalWriteAsync(getName(), codec, RedisCommands.EVAL_BOOLEAN,
+        return commandExecutor.evalWriteAsync(getRawName(), codec, RedisCommands.EVAL_BOOLEAN,
                 "local expireDate = 92233720368547758; " +
                 "local expireDateScore = redis.call('zscore', KEYS[1], ARGV[2]); "
               + "if expireDateScore ~= false then "
@@ -113,7 +119,7 @@ public class RedissonListMultimapValues<V> extends RedissonExpirable implements 
                     "redis.call('del', KEYS[2]); " +
                 "end; " +
                 "return res; ",
-                Arrays.<Object>asList(timeoutSetName, getName()), System.currentTimeMillis(), key);
+                Arrays.<Object>asList(timeoutSetName, getRawName()), System.currentTimeMillis(), key);
     }
 
     @Override
@@ -122,7 +128,7 @@ public class RedissonListMultimapValues<V> extends RedissonExpirable implements 
     }
 
     public RFuture<Integer> sizeAsync() {
-        return commandExecutor.evalReadAsync(getName(), codec, RedisCommands.EVAL_INTEGER,
+        return commandExecutor.evalReadAsync(getRawName(), codec, RedisCommands.EVAL_INTEGER,
                 "local expireDate = 92233720368547758; " +
                 "local expireDateScore = redis.call('zscore', KEYS[1], ARGV[2]); "
               + "if expireDateScore ~= false then "
@@ -132,7 +138,7 @@ public class RedissonListMultimapValues<V> extends RedissonExpirable implements 
                   + "return 0;"
               + "end; "
               + "return redis.call('llen', KEYS[2]);",
-         Arrays.<Object>asList(timeoutSetName, getName()), 
+         Arrays.<Object>asList(timeoutSetName, getRawName()),
          System.currentTimeMillis(), encodeMapKey(key));
     }
 
@@ -164,18 +170,7 @@ public class RedissonListMultimapValues<V> extends RedissonExpirable implements 
 
     @Override
     public RFuture<List<V>> readAllAsync() {
-        return commandExecutor.evalReadAsync(getName(), codec, RedisCommands.EVAL_MAP_VALUE_LIST,
-                "local expireDate = 92233720368547758; " +
-                "local expireDateScore = redis.call('zscore', KEYS[1], ARGV[2]); "
-              + "if expireDateScore ~= false then "
-                  + "expireDate = tonumber(expireDateScore) "
-              + "end; "
-              + "if expireDate <= tonumber(ARGV[1]) then "
-                  + "return {};"
-              + "end; "
-              + "return redis.call('lrange', KEYS[2], 0, -1);",
-              Arrays.<Object>asList(timeoutSetName, getName()), 
-              System.currentTimeMillis(), encodeMapKey(key));
+        return rangeAsync(0, -1);
     }
 
     @Override
@@ -211,7 +206,7 @@ public class RedissonListMultimapValues<V> extends RedissonExpirable implements 
 
     @Override
     public RFuture<Boolean> removeAsync(Object o, int count) {
-        return commandExecutor.evalWriteAsync(getName(), codec, RedisCommands.EVAL_BOOLEAN,
+        return commandExecutor.evalWriteAsync(getRawName(), codec, RedisCommands.EVAL_BOOLEAN,
                 "local expireDate = 92233720368547758; " +
                 "local expireDateScore = redis.call('zscore', KEYS[1], ARGV[3]); "
               + "if expireDateScore ~= false then "
@@ -221,7 +216,7 @@ public class RedissonListMultimapValues<V> extends RedissonExpirable implements 
                   + "return 0;"
               + "end; "
               + "return redis.call('lrem', KEYS[2], ARGV[2], ARGV[4]) > 0 and 1 or 0;",
-         Arrays.<Object>asList(timeoutSetName, getName()), 
+         Arrays.<Object>asList(timeoutSetName, getRawName()),
          System.currentTimeMillis(), count, encodeMapKey(key), encodeMapValue(o));
     }
 
@@ -237,7 +232,7 @@ public class RedissonListMultimapValues<V> extends RedissonExpirable implements 
         args.add(encodeMapKey(key));
         encodeMapValues(args, c);
         
-        return commandExecutor.evalReadAsync(getName(), codec, RedisCommands.EVAL_BOOLEAN,
+        return commandExecutor.evalReadAsync(getRawName(), codec, RedisCommands.EVAL_BOOLEAN,
                 "local expireDate = 92233720368547758; " +
                 "local expireDateScore = redis.call('zscore', KEYS[1], ARGV[2]); "
               + "if expireDateScore ~= false then "
@@ -254,7 +249,7 @@ public class RedissonListMultimapValues<V> extends RedissonExpirable implements 
                         + "end; "
                        + "end;"
                        + "return #ARGV == 2 and 1 or 0; ",
-                   Arrays.<Object>asList(timeoutSetName, getName()), args.toArray());
+                   Arrays.<Object>asList(timeoutSetName, getRawName()), args.toArray());
         
     }
 
@@ -290,7 +285,7 @@ public class RedissonListMultimapValues<V> extends RedissonExpirable implements 
         args.add(encodeMapKey(key));
         encodeMapValues(args, c);
         
-        return commandExecutor.evalWriteAsync(getName(), codec, RedisCommands.EVAL_BOOLEAN,
+        return commandExecutor.evalWriteAsync(getRawName(), codec, RedisCommands.EVAL_BOOLEAN,
                         "local expireDate = 92233720368547758; " +
                         "local expireDateScore = redis.call('zscore', KEYS[1], ARGV[2]); "
                       + "if expireDateScore ~= false then "
@@ -306,7 +301,7 @@ public class RedissonListMultimapValues<V> extends RedissonExpirable implements 
                             + "then v = 1 end "
                         +"end "
                        + "return v ",
-               Arrays.<Object>asList(timeoutSetName, getName()), args.toArray());
+               Arrays.<Object>asList(timeoutSetName, getRawName()), args.toArray());
     }
 
     @Override
@@ -326,7 +321,7 @@ public class RedissonListMultimapValues<V> extends RedissonExpirable implements 
         args.add(encodeMapKey(key));
         encodeMapValues(args, c);
 
-        return commandExecutor.evalWriteAsync(getName(), codec, RedisCommands.EVAL_BOOLEAN,
+        return commandExecutor.evalWriteAsync(getRawName(), codec, RedisCommands.EVAL_BOOLEAN,
                     "local expireDate = 92233720368547758; " +
                     "local expireDateScore = redis.call('zscore', KEYS[1], ARGV[2]); "
                   + "if expireDateScore ~= false then "
@@ -355,7 +350,7 @@ public class RedissonListMultimapValues<V> extends RedissonExpirable implements 
                             + "i = i + 1; "
                        + "end; "
                        + "return changed; ",
-                       Arrays.<Object>asList(timeoutSetName, getName()), args.toArray());
+                       Arrays.<Object>asList(timeoutSetName, getRawName()), args.toArray());
     }
 
 
@@ -377,7 +372,7 @@ public class RedissonListMultimapValues<V> extends RedissonExpirable implements 
         for (Integer index : indexes) {
             params.add(index);
         }
-        return commandExecutor.evalReadAsync(getName(), codec, RedisCommands.EVAL_LIST,
+        return commandExecutor.evalReadAsync(getRawName(), codec, RedisCommands.EVAL_LIST,
                 "local expireDate = 92233720368547758; " +
                 "local expireDateScore = redis.call('zscore', KEYS[1], ARGV[2]); "
               + "if expireDateScore ~= false then "
@@ -393,12 +388,12 @@ public class RedissonListMultimapValues<V> extends RedissonExpirable implements 
                     + "table.insert(result, value);" + 
                 "end; " +
                 "return result;",
-                Collections.<Object>singletonList(getName()), params.toArray());
+                Collections.<Object>singletonList(getRawName()), params.toArray());
     }
     
     @Override
     public RFuture<V> getAsync(int index) {
-        return commandExecutor.evalReadAsync(getName(), codec, RedisCommands.EVAL_MAP_VALUE,
+        return commandExecutor.evalReadAsync(getRawName(), codec, RedisCommands.EVAL_MAP_VALUE,
                 "local expireDate = 92233720368547758; " +
                 "local expireDateScore = redis.call('zscore', KEYS[1], ARGV[3]); "
               + "if expireDateScore ~= false then "
@@ -408,7 +403,7 @@ public class RedissonListMultimapValues<V> extends RedissonExpirable implements 
                   + "return nil;"
               + "end; "
               + "return redis.call('lindex', KEYS[2], ARGV[2]);",
-         Arrays.<Object>asList(timeoutSetName, getName()), 
+         Arrays.<Object>asList(timeoutSetName, getRawName()),
          System.currentTimeMillis(), index, encodeMapKey(key));
     }
 
@@ -476,7 +471,7 @@ public class RedissonListMultimapValues<V> extends RedissonExpirable implements 
     }
 
     private <R> RFuture<R> indexOfAsync(Object o, Convertor<R> convertor) {
-        return commandExecutor.evalReadAsync(getName(), codec, new RedisCommand<R>("EVAL", convertor),
+        return commandExecutor.evalReadAsync(getRawName(), codec, new RedisCommand<R>("EVAL", convertor),
                 "local expireDate = 92233720368547758; " +
                 "local expireDateScore = redis.call('zscore', KEYS[1], ARGV[2]); "
               + "if expireDateScore ~= false then "
@@ -493,7 +488,7 @@ public class RedissonListMultimapValues<V> extends RedissonExpirable implements 
                     "end; " +
                 "end; " +
                 "return -1;",
-                Arrays.<Object>asList(timeoutSetName, getName()), 
+                Arrays.<Object>asList(timeoutSetName, getRawName()),
                 System.currentTimeMillis(), encodeMapKey(key), encodeMapValue(o));
     }
 
@@ -509,7 +504,7 @@ public class RedissonListMultimapValues<V> extends RedissonExpirable implements 
 
     @Override
     public RFuture<Integer> lastIndexOfAsync(Object o) {
-        return commandExecutor.evalReadAsync(getName(), codec, RedisCommands.EVAL_INTEGER,
+        return commandExecutor.evalReadAsync(getRawName(), codec, RedisCommands.EVAL_INTEGER,
                 "local expireDate = 92233720368547758; " +
                 "local expireDateScore = redis.call('zscore', KEYS[1], ARGV[2]); "
               + "if expireDateScore ~= false then "
@@ -526,7 +521,7 @@ public class RedissonListMultimapValues<V> extends RedissonExpirable implements 
                     "end " +
                 "end " +
                 "return -1",
-                Arrays.<Object>asList(timeoutSetName, getName()), 
+                Arrays.<Object>asList(timeoutSetName, getRawName()),
                 System.currentTimeMillis(), encodeMapKey(key), encodeMapValue(o));
     }
 
@@ -652,7 +647,7 @@ public class RedissonListMultimapValues<V> extends RedissonExpirable implements 
             throw new IllegalArgumentException("fromIndex: " + fromIndex + " toIndex: " + toIndex);
         }
 
-        return new RedissonSubList<V>(codec, commandExecutor, getName(), fromIndex, toIndex);
+        return new RedissonSubList<V>(codec, commandExecutor, getRawName(), fromIndex, toIndex);
     }
 
     @Override
@@ -891,6 +886,37 @@ public class RedissonListMultimapValues<V> extends RedissonExpirable implements 
     public RFuture<Integer> sortToAsync(String destName, String byPattern, List<String> getPatterns,
             SortOrder order, int offset, int count) {
         return list.sortToAsync(destName, byPattern, getPatterns, order, offset, count);
+    }
+
+    @Override
+    public RFuture<List<V>> rangeAsync(int toIndex) {
+        return rangeAsync(0, toIndex);
+    }
+
+    @Override
+    public RFuture<List<V>> rangeAsync(int fromIndex, int toIndex) {
+        return commandExecutor.evalReadAsync(getRawName(), codec, RedisCommands.EVAL_MAP_VALUE_LIST,
+                "local expireDate = 92233720368547758; " +
+                "local expireDateScore = redis.call('zscore', KEYS[1], ARGV[2]); "
+              + "if expireDateScore ~= false then "
+                  + "expireDate = tonumber(expireDateScore) "
+              + "end; "
+              + "if expireDate <= tonumber(ARGV[1]) then "
+                  + "return {};"
+              + "end; "
+              + "return redis.call('lrange', KEYS[2], ARGV[3], ARGV[4]);",
+              Arrays.<Object>asList(timeoutSetName, getRawName()),
+              System.currentTimeMillis(), encodeMapKey(key), fromIndex, toIndex);
+    }
+
+    @Override
+    public List<V> range(int toIndex) {
+        return get(rangeAsync(toIndex));
+    }
+
+    @Override
+    public List<V> range(int fromIndex, int toIndex) {
+        return get(rangeAsync(fromIndex, toIndex));
     }
 
     

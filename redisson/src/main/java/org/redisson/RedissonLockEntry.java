@@ -1,5 +1,5 @@
 /**
- * Copyright (c) 2013-2019 Nikita Koksharov
+ * Copyright (c) 2013-2021 Nikita Koksharov
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -20,9 +20,14 @@ import java.util.concurrent.Semaphore;
 
 import org.redisson.misc.RPromise;
 
+/**
+ *
+ * @author Nikita Koksharov
+ *
+ */
 public class RedissonLockEntry implements PubSubEntry<RedissonLockEntry> {
 
-    private int counter;
+    private volatile int counter;
 
     private final Semaphore latch;
     private final RPromise<RedissonLockEntry> promise;
@@ -34,7 +39,11 @@ public class RedissonLockEntry implements PubSubEntry<RedissonLockEntry> {
         this.promise = promise;
     }
 
-    public void aquire() {
+    public int acquired() {
+        return counter;
+    }
+
+    public void acquire() {
         counter++;
     }
 

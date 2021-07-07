@@ -1,5 +1,5 @@
 /**
- * Copyright (c) 2013-2019 Nikita Koksharov
+ * Copyright (c) 2013-2021 Nikita Koksharov
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -15,14 +15,13 @@
  */
 package org.redisson.rx;
 
+import io.reactivex.rxjava3.core.Flowable;
 import org.redisson.RedissonScoredSortedSet;
+import org.redisson.ScanResult;
 import org.redisson.api.RFuture;
 import org.redisson.api.RObject;
 import org.redisson.api.RScoredSortedSetAsync;
 import org.redisson.client.RedisClient;
-import org.redisson.client.protocol.decoder.ListScanResult;
-
-import io.reactivex.Flowable;
 
 /**
  * 
@@ -41,22 +40,18 @@ public class RedissonScoredSortedSetRx<V>  {
     private Flowable<V> scanIteratorReactive(String pattern, int count) {
         return new SetRxIterator<V>() {
             @Override
-            protected RFuture<ListScanResult<Object>> scanIterator(RedisClient client, long nextIterPos) {
+            protected RFuture<ScanResult<Object>> scanIterator(RedisClient client, long nextIterPos) {
                 return ((RedissonScoredSortedSet<V>) instance).scanIteratorAsync(client, nextIterPos, pattern, count);
             }
         }.create();
     }
 
     public Flowable<V> takeFirstElements() {
-        return ElementsStream.takeElements(() -> {
-            return instance.takeFirstAsync();
-        });
+        return ElementsStream.takeElements(instance::takeFirstAsync);
     }
     
     public Flowable<V> takeLastElements() {
-        return ElementsStream.takeElements(() -> {
-            return instance.takeLastAsync();
-        });
+        return ElementsStream.takeElements(instance::takeLastAsync);
     }
     
     public String getName() {

@@ -1,5 +1,5 @@
 /**
- * Copyright (c) 2013-2019 Nikita Koksharov
+ * Copyright (c) 2013-2021 Nikita Koksharov
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -89,15 +89,15 @@ public class RedissonReactiveStringCommands extends RedissonBaseReactive impleme
                 }
             } else {
                 if (!command.getOption().isPresent() || command.getOption().get() == SetOption.UPSERT) {
-                    Mono<Boolean> m = write(key, StringCodec.INSTANCE, RedisCommands.SET, key, value, "PX", command.getExpiration().get().getExpirationTimeInMilliseconds());
+                    Mono<Boolean> m = write(key, StringCodec.INSTANCE, SET, key, value, "PX", command.getExpiration().get().getExpirationTimeInMilliseconds());
                     return m.map(v -> new BooleanResponse<>(command, v));
                 }
                 if (command.getOption().get() == SetOption.SET_IF_ABSENT) {
-                    Mono<Boolean> m = write(key, StringCodec.INSTANCE, RedisCommands.SET, key, value, "PX", command.getExpiration().get().getExpirationTimeInMilliseconds(), "NX");
+                    Mono<Boolean> m = write(key, StringCodec.INSTANCE, SET, key, value, "PX", command.getExpiration().get().getExpirationTimeInMilliseconds(), "NX");
                     return m.map(v -> new BooleanResponse<>(command, v));
                 }
                 if (command.getOption().get() == SetOption.SET_IF_PRESENT) {
-                    Mono<Boolean> m = write(key, StringCodec.INSTANCE, RedisCommands.SET, key, value, "PX", command.getExpiration().get().getExpirationTimeInMilliseconds(), "XX");
+                    Mono<Boolean> m = write(key, StringCodec.INSTANCE, SET, key, value, "PX", command.getExpiration().get().getExpirationTimeInMilliseconds(), "XX");
                     return m.map(v -> new BooleanResponse<>(command, v));
                 }
             }
@@ -105,21 +105,6 @@ public class RedissonReactiveStringCommands extends RedissonBaseReactive impleme
         });
     }
 
-    private static final RedisCommand<Object> GET = new RedisCommand<Object>("GET", new Decoder<Object>() {
-        @Override
-        public Object decode(ByteBuf buf, State state) throws IOException {
-            if (buf.readableBytes() == 0) {
-                System.out.println("null:");
-                return null;
-            }
-            
-            byte[] result = new byte[buf.readableBytes()];
-            buf.readBytes(result);
-            return result;
-        }
-        
-    });
-    
     @Override
     public Flux<ByteBufferResponse<KeyCommand>> get(Publisher<KeyCommand> keys) {
         return execute(keys, command -> {
@@ -127,7 +112,7 @@ public class RedissonReactiveStringCommands extends RedissonBaseReactive impleme
             Assert.notNull(command.getKey(), "Key must not be null!");
 
             byte[] keyBuf = toByteArray(command.getKey());
-            Mono<byte[]> m = read(keyBuf, ByteArrayCodec.INSTANCE, GET, keyBuf);
+            Mono<byte[]> m = read(keyBuf, ByteArrayCodec.INSTANCE, RedisCommands.GET, keyBuf);
             return m.map(v -> new ByteBufferResponse<>(command, ByteBuffer.wrap(v)))
                     .defaultIfEmpty(new AbsentByteBufferResponse<>(command));
         });

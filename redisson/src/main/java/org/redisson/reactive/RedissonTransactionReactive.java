@@ -1,5 +1,5 @@
 /**
- * Copyright (c) 2013-2019 Nikita Koksharov
+ * Copyright (c) 2013-2021 Nikita Koksharov
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -15,10 +15,7 @@
  */
 package org.redisson.reactive;
 
-import java.util.function.Supplier;
-
 import org.redisson.api.RBucketReactive;
-import org.redisson.api.RFuture;
 import org.redisson.api.RMap;
 import org.redisson.api.RMapCache;
 import org.redisson.api.RMapCacheReactive;
@@ -69,23 +66,23 @@ public class RedissonTransactionReactive implements RTransactionReactive {
 
     @Override
     public <K, V> RMapReactive<K, V> getMap(String name, Codec codec) {
-        RMap<K, V> map = transaction.<K, V>getMap(name, codec);
-        return ReactiveProxyBuilder.create(executorService, map, 
-                new RedissonMapReactive<K, V>(map, null), RMapReactive.class);
+        RMap<K, V> map = transaction.getMap(name, codec);
+        return ReactiveProxyBuilder.create(executorService, map,
+                new RedissonMapReactive<>(map, null), RMapReactive.class);
     }
 
     @Override
     public <K, V> RMapCacheReactive<K, V> getMapCache(String name, Codec codec) {
-        RMapCache<K, V> map = transaction.<K, V>getMapCache(name, codec);
-        return ReactiveProxyBuilder.create(executorService, map, 
-                new RedissonMapCacheReactive<K, V>(map), RMapCacheReactive.class);
+        RMapCache<K, V> map = transaction.getMapCache(name, codec);
+        return ReactiveProxyBuilder.create(executorService, map,
+                new RedissonMapCacheReactive<>(map, executorService), RMapCacheReactive.class);
     }
 
     @Override
     public <K, V> RMapCacheReactive<K, V> getMapCache(String name) {
-        RMapCache<K, V> map = transaction.<K, V>getMapCache(name);
-        return ReactiveProxyBuilder.create(executorService, map, 
-                new RedissonMapCacheReactive<K, V>(map), RMapCacheReactive.class);
+        RMapCache<K, V> map = transaction.getMapCache(name);
+        return ReactiveProxyBuilder.create(executorService, map,
+                new RedissonMapCacheReactive<>(map, executorService), RMapCacheReactive.class);
     }
 
     @Override
@@ -118,22 +115,12 @@ public class RedissonTransactionReactive implements RTransactionReactive {
 
     @Override
     public Mono<Void> commit() {
-        return executorService.reactive(new Supplier<RFuture<Void>>() {
-            @Override
-            public RFuture<Void> get() {
-                return transaction.commitAsync();
-            }
-        });
+        return executorService.reactive(() -> transaction.commitAsync());
     }
 
     @Override
     public Mono<Void> rollback() {
-        return executorService.reactive(new Supplier<RFuture<Void>>() {
-            @Override
-            public RFuture<Void> get() {
-                return transaction.rollbackAsync();
-            }
-        });
+        return executorService.reactive(() -> transaction.rollbackAsync());
     }
     
 }

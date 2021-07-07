@@ -1,5 +1,5 @@
 /**
- * Copyright (c) 2013-2019 Nikita Koksharov
+ * Copyright (c) 2013-2021 Nikita Koksharov
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -27,6 +27,7 @@ import java.util.concurrent.locks.Condition;
 
 import org.redisson.api.RFuture;
 import org.redisson.api.RLock;
+import org.redisson.api.RLockAsync;
 import org.redisson.client.RedisResponseTimeoutException;
 import org.redisson.misc.RPromise;
 import org.redisson.misc.RedissonPromise;
@@ -61,11 +62,15 @@ public class RedissonMultiLock implements RLock {
             this.threadId = threadId;
             
             if (leaseTime != -1) {
-                newLeaseTime = unit.toMillis(waitTime)*2;
+                if (waitTime == -1) {
+                    newLeaseTime = unit.toMillis(leaseTime);
+                } else {
+                    newLeaseTime = unit.toMillis(waitTime)*2;
+                }
             } else {
                 newLeaseTime = -1;
             }
-            
+
             remainTime = -1;
             if (waitTime != -1) {
                 remainTime = unit.toMillis(waitTime);
@@ -118,7 +123,7 @@ public class RedissonMultiLock implements RLock {
                                 return;
                             }
                             
-                            if (waitTime == -1 && leaseTime == -1) {
+                            if (waitTime == -1) {
                                 result.trySuccess(false);
                                 return;
                             }
@@ -304,14 +309,9 @@ public class RedissonMultiLock implements RLock {
     }
 
     protected void unlockInner(Collection<RLock> locks) {
-        List<RFuture<Void>> futures = new ArrayList<>(locks.size());
-        for (RLock lock : locks) {
-            futures.add(lock.unlockAsync());
-        }
-
-        for (RFuture<Void> unlockFuture : futures) {
-            unlockFuture.awaitUninterruptibly();
-        }
+        locks.stream()
+                .map(RLockAsync::unlockAsync)
+                .forEach(RFuture::awaitUninterruptibly);
     }
     
     protected RFuture<Void> unlockInnerAsync(Collection<RLock> locks, long threadId) {
@@ -336,7 +336,6 @@ public class RedissonMultiLock implements RLock {
         return result;
     }
 
-
     @Override
     public boolean tryLock(long waitTime, TimeUnit unit) throws InterruptedException {
         return tryLock(waitTime, -1, unit);
@@ -346,6 +345,7 @@ public class RedissonMultiLock implements RLock {
         return 0;
     }
     
+    @Override
     public boolean tryLock(long waitTime, long leaseTime, TimeUnit unit) throws InterruptedException {
 //        try {
 //            return tryLockAsync(waitTime, leaseTime, unit).get();
@@ -354,7 +354,11 @@ public class RedissonMultiLock implements RLock {
 //        }
         long newLeaseTime = -1;
         if (leaseTime != -1) {
-            newLeaseTime = unit.toMillis(waitTime)*2;
+            if (waitTime == -1) {
+                newLeaseTime = unit.toMillis(leaseTime);
+            } else {
+                newLeaseTime = unit.toMillis(waitTime)*2;
+            }
         }
         
         long time = System.currentTimeMillis();
@@ -392,7 +396,7 @@ public class RedissonMultiLock implements RLock {
 
                 if (failedLocksLimit == 0) {
                     unlockInner(acquiredLocks);
-                    if (waitTime == -1 && leaseTime == -1) {
+                    if (waitTime == -1) {
                         return false;
                     }
                     failedLocksLimit = failedLocksLimit();
@@ -417,15 +421,10 @@ public class RedissonMultiLock implements RLock {
         }
 
         if (leaseTime != -1) {
-            List<RFuture<Boolean>> futures = new ArrayList<>(acquiredLocks.size());
-            for (RLock rLock : acquiredLocks) {
-                RFuture<Boolean> future = ((RedissonLock) rLock).expireAsync(unit.toMillis(leaseTime), TimeUnit.MILLISECONDS);
-                futures.add(future);
-            }
-            
-            for (RFuture<Boolean> rFuture : futures) {
-                rFuture.syncUninterruptibly();
-            }
+            acquiredLocks.stream()
+                    .map(l -> (RedissonLock) l)
+                    .map(l -> l.expireAsync(unit.toMillis(leaseTime), TimeUnit.MILLISECONDS))
+                    .forEach(f -> f.syncUninterruptibly());
         }
         
         return true;
@@ -526,6 +525,11 @@ public class RedissonMultiLock implements RLock {
     public boolean isLocked() {
         throw new UnsupportedOperationException();
     }
+    
+    @Override
+    public RFuture<Boolean> isLockedAsync() {
+        throw new UnsupportedOperationException();
+    }
 
     @Override
     public boolean isHeldByThread(long threadId) {
@@ -539,6 +543,16 @@ public class RedissonMultiLock implements RLock {
 
     @Override
     public int getHoldCount() {
+        throw new UnsupportedOperationException();
+    }
+
+    @Override
+    public RFuture<Long> remainTimeToLiveAsync() {
+        throw new UnsupportedOperationException();
+    }
+
+    @Override
+    public long remainTimeToLive() {
         throw new UnsupportedOperationException();
     }
 

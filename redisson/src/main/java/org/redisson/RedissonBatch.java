@@ -1,5 +1,5 @@
 /**
- * Copyright (c) 2013-2019 Nikita Koksharov
+ * Copyright (c) 2013-2021 Nikita Koksharov
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -15,39 +15,10 @@
  */
 package org.redisson;
 
-import java.util.concurrent.TimeUnit;
-
-import org.redisson.api.BatchOptions;
-import org.redisson.api.BatchResult;
-import org.redisson.api.RAtomicDoubleAsync;
-import org.redisson.api.RAtomicLongAsync;
-import org.redisson.api.RBatch;
-import org.redisson.api.RBitSetAsync;
-import org.redisson.api.RBlockingDequeAsync;
-import org.redisson.api.RBlockingQueueAsync;
-import org.redisson.api.RBucketAsync;
-import org.redisson.api.RDequeAsync;
-import org.redisson.api.RFuture;
-import org.redisson.api.RGeoAsync;
-import org.redisson.api.RHyperLogLogAsync;
-import org.redisson.api.RKeysAsync;
-import org.redisson.api.RLexSortedSetAsync;
-import org.redisson.api.RListAsync;
-import org.redisson.api.RMapAsync;
-import org.redisson.api.RMapCacheAsync;
-import org.redisson.api.RMultimapAsync;
-import org.redisson.api.RMultimapCacheAsync;
-import org.redisson.api.RQueueAsync;
-import org.redisson.api.RScoredSortedSetAsync;
-import org.redisson.api.RScript;
-import org.redisson.api.RScriptAsync;
-import org.redisson.api.RSetAsync;
-import org.redisson.api.RSetCacheAsync;
-import org.redisson.api.RStreamAsync;
-import org.redisson.api.RTopicAsync;
+import org.redisson.api.*;
 import org.redisson.client.codec.Codec;
+import org.redisson.command.CommandAsyncExecutor;
 import org.redisson.command.CommandBatchService;
-import org.redisson.connection.ConnectionManager;
 import org.redisson.eviction.EvictionScheduler;
 
 /**
@@ -60,12 +31,10 @@ public class RedissonBatch implements RBatch {
 
     private final EvictionScheduler evictionScheduler;
     private final CommandBatchService executorService;
-    private final BatchOptions options;
 
-    public RedissonBatch(EvictionScheduler evictionScheduler, ConnectionManager connectionManager, BatchOptions options) {
-        this.executorService = new CommandBatchService(connectionManager, options);
+    public RedissonBatch(EvictionScheduler evictionScheduler, CommandAsyncExecutor executor, BatchOptions options) {
+        this.executorService = new CommandBatchService(executor, options);
         this.evictionScheduler = evictionScheduler;
-        this.options = options;
     }
 
     @Override
@@ -100,12 +69,12 @@ public class RedissonBatch implements RBatch {
 
     @Override
     public <K, V> RMapAsync<K, V> getMap(String name) {
-        return new RedissonMap<K, V>(executorService, name, null, null);
+        return new RedissonMap<K, V>(executorService, name, null, null, null);
     }
 
     @Override
     public <K, V> RMapAsync<K, V> getMap(String name, Codec codec) {
-        return new RedissonMap<K, V>(codec, executorService, name, null, null);
+        return new RedissonMap<K, V>(codec, executorService, name, null, null, null);
     }
 
     @Override
@@ -200,12 +169,12 @@ public class RedissonBatch implements RBatch {
 
     @Override
     public <K, V> RMapCacheAsync<K, V> getMapCache(String name, Codec codec) {
-        return new RedissonMapCache<K, V>(codec, evictionScheduler, executorService, name, null, null);
+        return new RedissonMapCache<K, V>(codec, evictionScheduler, executorService, name, null, null, null);
     }
 
     @Override
     public <K, V> RMapCacheAsync<K, V> getMapCache(String name) {
-        return new RedissonMapCache<K, V>(evictionScheduler, executorService, name, null, null);
+        return new RedissonMapCache<K, V>(evictionScheduler, executorService, name, null, null, null);
     }
 
     @Override
@@ -234,51 +203,25 @@ public class RedissonBatch implements RBatch {
     }
 
     @Override
-    public RBatch syncSlaves(int slaves, long timeout, TimeUnit unit) {
-        options.syncSlaves(slaves, timeout, unit);
-        return this;
-    }
-    
-    @Override
-    public RBatch atomic() {
-        options.atomic();
-        return this;
-    }
-    
-    @Override
-    public RBatch skipResult() {
-        options.skipResult();
-        return this;
-    }
-    
-    @Override
-    public RBatch retryAttempts(int retryAttempts) {
-        options.retryAttempts(retryAttempts);
-        return this;
-    }
-    
-    @Override
-    public RBatch retryInterval(long retryInterval, TimeUnit unit) {
-        options.retryInterval(retryInterval, unit);
-        return this;
-    }
-    
-    @Override
-    public RBatch timeout(long timeout, TimeUnit unit) {
-        options.responseTimeout(timeout, unit);
-        return this;
-    }
-    
-    @Override
     public BatchResult<?> execute() {
-        return executorService.execute(BatchOptions.defaults());
+        return executorService.execute();
     }
 
     @Override
     public RFuture<BatchResult<?>> executeAsync() {
-        return executorService.executeAsync(BatchOptions.defaults());
+        return executorService.executeAsync();
     }
-    
+
+    @Override
+    public void discard() {
+        executorService.discard();
+    }
+
+    @Override
+    public RFuture<Void> discardAsync() {
+        return executorService.discardAsync();
+    }
+
     @Override
     public <K, V> RMultimapAsync<K, V> getSetMultimap(String name) {
         return new RedissonSetMultimap<K, V>(executorService, name);
@@ -327,10 +270,6 @@ public class RedissonBatch implements RBatch {
     @Override
     public <K, V> RMultimapCacheAsync<K, V> getListMultimapCache(String name, Codec codec) {
         return new RedissonListMultimapCache<K, V>(evictionScheduler, codec, executorService, name);
-    }
-
-    protected void enableRedissonReferenceSupport(Redisson redisson) {
-        this.executorService.enableRedissonReferenceSupport(redisson);
     }
 
     @Override

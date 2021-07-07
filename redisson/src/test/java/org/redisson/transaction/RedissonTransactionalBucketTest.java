@@ -4,8 +4,8 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 import java.util.concurrent.TimeUnit;
 
-import org.junit.Assert;
-import org.junit.Test;
+import org.junit.jupiter.api.Assertions;
+import org.junit.jupiter.api.Test;
 import org.redisson.BaseTest;
 import org.redisson.api.RBucket;
 import org.redisson.api.RTransaction;
@@ -22,11 +22,11 @@ public class RedissonTransactionalBucketTest extends BaseTest {
         RBucket<String> bucket = transaction.getBucket("test");
         bucket.set("234");
         
-        Thread.sleep(3000);
+        Thread.sleep(4000);
         
         try {
             transaction.commit();
-            Assert.fail();
+            Assertions.fail();
         } catch (TransactionException e) {
             // skip
         }
@@ -113,7 +113,7 @@ public class RedissonTransactionalBucketTest extends BaseTest {
         RTransaction transaction = redisson.createTransaction(TransactionOptions.defaults());
         RBucket<String> set = transaction.getBucket("test");
         assertThat(set.get()).isEqualTo("123");
-        assertThat(set.size()).isEqualTo(5);
+        assertThat(set.size()).isEqualTo(6);
         assertThat(set.getAndDelete()).isEqualTo("123");
         assertThat(set.size()).isEqualTo(0);
         assertThat(set.get()).isNull();

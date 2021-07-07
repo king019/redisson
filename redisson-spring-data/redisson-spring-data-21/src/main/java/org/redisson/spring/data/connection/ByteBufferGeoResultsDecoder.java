@@ -1,5 +1,5 @@
 /**
- * Copyright (c) 2013-2019 Nikita Koksharov
+ * Copyright (c) 2013-2021 Nikita Koksharov
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -15,20 +15,14 @@
  */
 package org.redisson.spring.data.connection;
 
+import org.redisson.client.handler.State;
+import org.redisson.client.protocol.decoder.MultiDecoder;
+import org.springframework.data.geo.*;
+import org.springframework.data.redis.connection.RedisGeoCommands.GeoLocation;
+
 import java.nio.ByteBuffer;
 import java.util.ArrayList;
 import java.util.List;
-
-import org.redisson.client.handler.State;
-import org.redisson.client.protocol.Decoder;
-import org.redisson.client.protocol.decoder.ListMultiDecoder;
-import org.redisson.client.protocol.decoder.MultiDecoder;
-import org.springframework.data.geo.Distance;
-import org.springframework.data.geo.GeoResult;
-import org.springframework.data.geo.GeoResults;
-import org.springframework.data.geo.Metric;
-import org.springframework.data.geo.Point;
-import org.springframework.data.redis.connection.RedisGeoCommands.GeoLocation;
 
 /**
  * 
@@ -48,11 +42,6 @@ public class ByteBufferGeoResultsDecoder implements MultiDecoder<GeoResults<GeoL
         this.metric = metric;
     }
 
-    @Override
-    public Decoder<Object> getDecoder(int paramNum, State state) {
-        return ListMultiDecoder.RESET;
-    }
-    
     @Override
     public GeoResults<GeoLocation<ByteBuffer>> decode(List<Object> parts, State state) {
         List<GeoResult<GeoLocation<ByteBuffer>>> result = new ArrayList<GeoResult<GeoLocation<ByteBuffer>>>();

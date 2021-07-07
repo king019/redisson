@@ -1,5 +1,5 @@
 /**
- * Copyright (c) 2013-2019 Nikita Koksharov
+ * Copyright (c) 2013-2021 Nikita Koksharov
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -25,8 +25,10 @@ import java.util.concurrent.TimeUnit;
 import org.redisson.api.RExecutorService;
 import org.redisson.api.RFuture;
 import org.redisson.api.RedissonClient;
+import org.redisson.api.WorkerOptions;
 import org.redisson.client.RedisConnection;
 import org.redisson.config.RedissonNodeConfig;
+import org.redisson.config.RedissonNodeFileConfig;
 import org.redisson.connection.ConnectionManager;
 import org.redisson.connection.MasterSlaveEntry;
 import org.slf4j.Logger;
@@ -85,13 +87,13 @@ public final class RedissonNode {
         }
         
         String configPath = args[0];
-        RedissonNodeConfig config = null;
+        RedissonNodeFileConfig config = null;
         try {
-            config = RedissonNodeConfig.fromJSON(new File(configPath));
+            config = RedissonNodeFileConfig.fromJSON(new File(configPath));
         } catch (IOException e) {
             // trying next format
             try {
-                config = RedissonNodeConfig.fromYAML(new File(configPath));
+                config = RedissonNodeFileConfig.fromYAML(new File(configPath));
             } catch (IOException e1) {
                 log.error("Can't parse json config " + configPath, e);
                 throw new IllegalArgumentException("Can't parse yaml config " + configPath, e1);
@@ -139,15 +141,25 @@ public final class RedissonNode {
             if (mapReduceWorkers == 0) {
                 mapReduceWorkers = Runtime.getRuntime().availableProcessors();
             }
-            redisson.getExecutorService(RExecutorService.MAPREDUCE_NAME).registerWorkers(mapReduceWorkers);
+            
+            WorkerOptions options = WorkerOptions.defaults()
+                                                .workers(mapReduceWorkers)
+                                                .beanFactory(config.getBeanFactory());
+            
+            redisson.getExecutorService(RExecutorService.MAPREDUCE_NAME).registerWorkers(options);
             log.info("{} map reduce worker(s) registered", mapReduceWorkers);
         }
         
         for (Entry<String, Integer> entry : config.getExecutorServiceWorkers().entrySet()) {
             String name = entry.getKey();
             int workers = entry.getValue();
-            redisson.getExecutorService(name).registerWorkers(workers);
-            log.info("{} worker(s) for '{}' ExecutorService registered", workers, name);
+            
+            WorkerOptions options = WorkerOptions.defaults()
+                                                .workers(workers)
+                                                .beanFactory(config.getBeanFactory());
+            
+            redisson.getExecutorService(name).registerWorkers(options);
+            log.info("{} worker(s) registered for ExecutorService with '{}' name", workers, name);
         }
 
         log.info("Redisson node started!");
@@ -185,6 +197,16 @@ public final class RedissonNode {
      */
     public static RedissonNode create(RedissonNodeConfig config) {
         return create(config, null);
+    }
+
+    /**
+     * Create Redisson node instance with provided config
+     *
+     * @param config of RedissonNode
+     * @return RedissonNode instance
+     */
+    public static RedissonNode create(RedissonNodeFileConfig config) {
+        return create(new RedissonNodeConfig(config), null);
     }
 
     /**

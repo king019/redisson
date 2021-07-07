@@ -1,5 +1,5 @@
 /**
- * Copyright (c) 2013-2019 Nikita Koksharov
+ * Copyright (c) 2013-2021 Nikita Koksharov
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -15,13 +15,6 @@
  */
 package org.redisson;
 
-import java.io.IOException;
-import java.util.ArrayList;
-import java.util.Arrays;
-import java.util.Collection;
-import java.util.Collections;
-import java.util.List;
-
 import org.redisson.api.RFuture;
 import org.redisson.api.RScript;
 import org.redisson.client.codec.Codec;
@@ -30,7 +23,7 @@ import org.redisson.client.protocol.RedisCommand;
 import org.redisson.client.protocol.RedisCommands;
 import org.redisson.command.CommandAsyncExecutor;
 
-import io.netty.buffer.ByteBuf;
+import java.util.*;
 
 /**
  * 
@@ -88,37 +81,21 @@ public class RedissonScript implements RScript {
     }
 
     @Override
-    public <R> R eval(Mode mode, Codec codec, String luaScript, ReturnType returnType) {
-        RedissonScript script = new RedissonScript(commandExecutor, codec);
-        return script.eval(mode, luaScript, returnType);
-    }
-
-    @Override
     public <R> R eval(Mode mode, String luaScript, ReturnType returnType, List<Object> keys, Object... values) {
-        return eval(null, mode, luaScript, returnType, keys, values);
-    }
-
-    @Override
-    public <R> R eval(Mode mode, Codec codec, String luaScript, ReturnType returnType, List<Object> keys, Object... values) {
-        RedissonScript script = new RedissonScript(commandExecutor, codec);
-        return script.eval(mode, luaScript, returnType, keys, values);
+        String key = null;
+        if (!keys.isEmpty()) {
+            key = (String) keys.get(0);
+        }
+        return eval(key, mode, luaScript, returnType, keys, values);
     }
 
     @Override
     public <R> RFuture<R> evalAsync(Mode mode, String luaScript, ReturnType returnType, List<Object> keys, Object... values) {
-        return evalAsync(null, mode, luaScript, returnType, keys, values);
-    }
-
-    @Override
-    public <R> RFuture<R> evalAsync(Mode mode, Codec codec, String luaScript, ReturnType returnType, List<Object> keys, Object... values) {
-        RedissonScript script = new RedissonScript(commandExecutor, codec);
-        return script.evalAsync(mode, luaScript, returnType, keys, values);
-    }
-
-    @Override
-    public <R> RFuture<R> evalAsync(String key, Mode mode, Codec codec, String luaScript, ReturnType returnType, List<Object> keys, Object... values) {
-        RedissonScript script = new RedissonScript(commandExecutor, codec);
-        return script.evalAsync(key, mode, luaScript, returnType, keys, values);
+        String key = null;
+        if (!keys.isEmpty()) {
+            key = (String) keys.get(0);
+        }
+        return evalAsync(key, mode, luaScript, returnType, keys, values);
     }
 
     @Override
@@ -127,27 +104,12 @@ public class RedissonScript implements RScript {
     }
 
     @Override
-    public <R> R evalSha(Mode mode, Codec codec, String shaDigest, ReturnType returnType) {
-        return evalSha(mode, codec, shaDigest, returnType, Collections.emptyList());
-    }
-
-    @Override
     public <R> R evalSha(Mode mode, String shaDigest, ReturnType returnType, List<Object> keys, Object... values) {
         return evalSha(null, mode, shaDigest, returnType, keys, values);
     }
 
     @Override
-    public <R> R evalSha(Mode mode, Codec codec, String shaDigest, ReturnType returnType, List<Object> keys, Object... values) {
-        return (R) commandExecutor.get(evalShaAsync(null, mode, codec, shaDigest, returnType, keys, values));
-    }
-
-    @Override
     public <R> RFuture<R> evalShaAsync(Mode mode, String shaDigest, ReturnType returnType, List<Object> keys, Object... values) {
-        return evalShaAsync(null, mode, commandExecutor.getConnectionManager().getCodec(), shaDigest, returnType, keys, values);
-    }
-
-    @Override
-    public <R> RFuture<R> evalShaAsync(Mode mode, Codec codec, String shaDigest, ReturnType returnType, List<Object> keys, Object... values) {
         return evalShaAsync(null, mode, codec, shaDigest, returnType, keys, values);
     }
 
@@ -228,47 +190,22 @@ public class RedissonScript implements RScript {
 
     @Override
     public <R> RFuture<R> evalShaAsync(Mode mode, String shaDigest, ReturnType returnType) {
-        return evalShaAsync(null, mode, commandExecutor.getConnectionManager().getCodec(), shaDigest, returnType, Collections.emptyList());
-    }
-
-    @Override
-    public <R> RFuture<R> evalShaAsync(Mode mode, Codec codec, String shaDigest, ReturnType returnType) {
         return evalShaAsync(null, mode, codec, shaDigest, returnType, Collections.emptyList());
     }
 
     @Override
     public <R> RFuture<R> evalAsync(Mode mode, String luaScript, ReturnType returnType) {
-        return evalAsync(null, mode, commandExecutor.getConnectionManager().getCodec(), luaScript, returnType, Collections.emptyList());
-    }
-
-    @Override
-    public <R> RFuture<R> evalAsync(Mode mode, Codec codec, String luaScript, ReturnType returnType) {
-        return evalAsync(null, mode, codec, luaScript, returnType, Collections.emptyList());
+        return evalAsync(null, mode, luaScript, returnType, Collections.emptyList());
     }
 
     private List<Object> encode(Collection<?> values, Codec codec) {
         List<Object> result = new ArrayList<Object>(values.size());
         for (Object object : values) {
-            result.add(encode(object, codec));
+            result.add(commandExecutor.encode(codec, object));
         }
         return result;
     }
     
-    private ByteBuf encode(Object value, Codec codec) {
-        if (commandExecutor.isRedissonReferenceSupportEnabled()) {
-            RedissonReference reference = commandExecutor.getObjectBuilder().toReference(value);
-            if (reference != null) {
-                value = reference;
-            }
-        }
-        
-        try {
-            return codec.getValueEncoder().encode(value);
-        } catch (IOException e) {
-            throw new IllegalArgumentException(e);
-        }
-    }
-
     @Override
     public <R> RFuture<R> evalShaAsync(String key, Mode mode, String shaDigest, ReturnType returnType,
             List<Object> keys, Object... values) {

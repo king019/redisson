@@ -1,5 +1,5 @@
 /**
- * Copyright (c) 2013-2019 Nikita Koksharov
+ * Copyright (c) 2013-2021 Nikita Koksharov
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -15,28 +15,19 @@
  */
 package org.redisson.transaction;
 
-import java.util.Collection;
-import java.util.Date;
-import java.util.List;
-import java.util.Map;
-import java.util.Set;
-import java.util.concurrent.TimeUnit;
-import java.util.concurrent.atomic.AtomicBoolean;
-
 import org.redisson.RedissonMap;
-import org.redisson.api.RCountDownLatch;
-import org.redisson.api.RFuture;
-import org.redisson.api.RLock;
-import org.redisson.api.RMap;
-import org.redisson.api.RPermitExpirableSemaphore;
-import org.redisson.api.RReadWriteLock;
-import org.redisson.api.RSemaphore;
+import org.redisson.ScanResult;
+import org.redisson.api.*;
 import org.redisson.api.mapreduce.RMapReduce;
 import org.redisson.client.RedisClient;
 import org.redisson.client.codec.Codec;
-import org.redisson.client.protocol.decoder.MapScanResult;
 import org.redisson.command.CommandAsyncExecutor;
 import org.redisson.transaction.operation.TransactionalOperation;
+
+import java.time.Instant;
+import java.util.*;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicBoolean;
 
 /**
  * 
@@ -52,24 +43,24 @@ public class RedissonTransactionalMap<K, V> extends RedissonMap<K, V> {
 
     public RedissonTransactionalMap(CommandAsyncExecutor commandExecutor,  
             List<TransactionalOperation> operations, long timeout, AtomicBoolean executed, RMap<K, V> innerMap, String transactionId) {
-        super(innerMap.getCodec(), commandExecutor, innerMap.getName(), null, null);
+        super(innerMap.getCodec(), commandExecutor, innerMap.getName(), null, null, null);
         this.executed = executed;
         this.transactionalMap = new BaseTransactionalMap<K, V>(commandExecutor, timeout, operations, innerMap, transactionId);
     }
     
     public RedissonTransactionalMap(CommandAsyncExecutor commandExecutor, String name, 
             List<TransactionalOperation> operations, long timeout, AtomicBoolean executed, String transactionId) {
-        super(commandExecutor, name, null, null);
+        super(commandExecutor, name, null, null, null);
         this.executed = executed;
-        RedissonMap<K, V> innerMap = new RedissonMap<K, V>(commandExecutor, name, null, null);
+        RedissonMap<K, V> innerMap = new RedissonMap<K, V>(commandExecutor, name, null, null, null);
         this.transactionalMap = new BaseTransactionalMap<K, V>(commandExecutor, timeout, operations, innerMap, transactionId);
     }
 
     public RedissonTransactionalMap(Codec codec, CommandAsyncExecutor commandExecutor, String name,
             List<TransactionalOperation> operations, long timeout, AtomicBoolean executed, String transactionId) {
-        super(codec, commandExecutor, name, null, null);
+        super(codec, commandExecutor, name, null, null, null);
         this.executed = executed;
-        RedissonMap<K, V> innerMap = new RedissonMap<K, V>(codec, commandExecutor, name, null, null);
+        RedissonMap<K, V> innerMap = new RedissonMap<K, V>(codec, commandExecutor, name, null, null, null);
         this.transactionalMap = new BaseTransactionalMap<K, V>(commandExecutor, timeout, operations, innerMap, transactionId);
     }
     
@@ -80,14 +71,19 @@ public class RedissonTransactionalMap<K, V> extends RedissonMap<K, V> {
     
     @Override
     public RFuture<Boolean> expireAtAsync(Date timestamp) {
-        throw new UnsupportedOperationException("expireAt method is not supported in transaction");
+        throw new UnsupportedOperationException("expire method is not supported in transaction");
     }
     
     @Override
     public RFuture<Boolean> expireAtAsync(long timestamp) {
-        throw new UnsupportedOperationException("expireAt method is not supported in transaction");
+        throw new UnsupportedOperationException("expire method is not supported in transaction");
     }
-    
+
+    @Override
+    public RFuture<Boolean> expireAsync(Instant timestamp) {
+        throw new UnsupportedOperationException("expire method is not supported in transaction");
+    }
+
     @Override
     public RFuture<Boolean> clearExpireAsync() {
         throw new UnsupportedOperationException("clearExpire method is not supported in transaction");
@@ -109,8 +105,8 @@ public class RedissonTransactionalMap<K, V> extends RedissonMap<K, V> {
     }
     
     @Override
-    public MapScanResult<Object, Object> scanIterator(String name, RedisClient client,
-            long startPos, String pattern, int count) {
+    public ScanResult<Map.Entry<Object, Object>> scanIterator(String name, RedisClient client,
+                                                   long startPos, String pattern, int count) {
         checkState();
         return transactionalMap.scanIterator(name, client, startPos, pattern, count);
     }
@@ -132,7 +128,13 @@ public class RedissonTransactionalMap<K, V> extends RedissonMap<K, V> {
         checkState();
         return transactionalMap.addAndGetOperationAsync(key, value);
     }
-    
+
+    @Override
+    protected RFuture<V> putIfExistsOperationAsync(K key, V value) {
+        checkState();
+        return transactionalMap.putIfExistsOperationAsync(key, value);
+    }
+
     @Override
     protected RFuture<V> putIfAbsentOperationAsync(K key, V value) {
         checkState();
@@ -144,7 +146,13 @@ public class RedissonTransactionalMap<K, V> extends RedissonMap<K, V> {
         checkState();
         return transactionalMap.putOperationAsync(key, value);
     }
-    
+
+    @Override
+    protected RFuture<Boolean> fastPutIfExistsOperationAsync(K key, V value) {
+        checkState();
+        return transactionalMap.fastPutIfExistsOperationAsync(key, value);
+    }
+
     @Override
     protected RFuture<Boolean> fastPutIfAbsentOperationAsync(K key, V value) {
         checkState();

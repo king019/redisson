@@ -1,5 +1,5 @@
 /**
- * Copyright (c) 2013-2019 Nikita Koksharov
+ * Copyright (c) 2013-2021 Nikita Koksharov
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -201,7 +201,7 @@ public class RedissonTransaction implements RTransaction {
         
         BatchOptions batchOptions = createOptions();
         
-        CommandBatchService transactionExecutor = new CommandBatchService(commandExecutor.getConnectionManager(), batchOptions);
+        CommandBatchService transactionExecutor = new CommandBatchService(commandExecutor, batchOptions);
         for (TransactionalOperation transactionalOperation : operations) {
             transactionalOperation.commit(transactionExecutor);
         }
@@ -224,7 +224,7 @@ public class RedissonTransaction implements RTransaction {
                 return;
             }
                             
-            RFuture<List<?>> transactionFuture = transactionExecutor.executeAsync();
+            RFuture<BatchResult<?>> transactionFuture = transactionExecutor.executeAsync();
             transactionFuture.onComplete((r, exc) -> {
                 if (exc != null) {
                     result.tryFailure(new TransactionException("Unable to execute transaction", exc));
@@ -241,18 +241,15 @@ public class RedissonTransaction implements RTransaction {
     }
 
     private BatchOptions createOptions() {
-        int syncSlaves = 0;
-        if (!commandExecutor.getConnectionManager().isClusterMode()) {
-            MasterSlaveEntry entry = commandExecutor.getConnectionManager().getEntrySet().iterator().next();
-            syncSlaves = entry.getAvailableClients() - 1;
-        }
-        
+        MasterSlaveEntry entry = commandExecutor.getConnectionManager().getEntrySet().iterator().next();
+        int syncSlaves = entry.getAvailableSlaves();
+
         BatchOptions batchOptions = BatchOptions.defaults()
                 .syncSlaves(syncSlaves, options.getSyncTimeout(), TimeUnit.MILLISECONDS)
                 .responseTimeout(options.getResponseTimeout(), TimeUnit.MILLISECONDS)
                 .retryAttempts(options.getRetryAttempts())
                 .retryInterval(options.getRetryInterval(), TimeUnit.MILLISECONDS)
-                .atomic();
+                .executionMode(BatchOptions.ExecutionMode.IN_MEMORY_ATOMIC);
         return batchOptions;
     }
 
@@ -268,7 +265,7 @@ public class RedissonTransaction implements RTransaction {
         
         BatchOptions batchOptions = createOptions();
         
-        CommandBatchService transactionExecutor = new CommandBatchService(commandExecutor.getConnectionManager(), batchOptions);
+        CommandBatchService transactionExecutor = new CommandBatchService(commandExecutor, batchOptions);
         for (TransactionalOperation transactionalOperation : operations) {
             transactionalOperation.commit(transactionExecutor);
         }
@@ -307,7 +304,7 @@ public class RedissonTransaction implements RTransaction {
             return RedissonPromise.newSucceededFuture(null);
         }
         
-        RedissonBatch publishBatch = new RedissonBatch(null, commandExecutor.getConnectionManager(), BatchOptions.defaults());
+        RedissonBatch publishBatch = createBatch();
         for (Entry<HashKey, HashValue> entry : hashes.entrySet()) {
             String name = RedissonObject.suffixName(entry.getKey().getName(), RedissonLocalCachedMap.TOPIC_SUFFIX);
             RTopicAsync topic = publishBatch.getTopic(name, LocalCachedMessageCodec.INSTANCE);
@@ -323,7 +320,7 @@ public class RedissonTransaction implements RTransaction {
             return;
         }
         
-        RedissonBatch publishBatch = new RedissonBatch(null, commandExecutor.getConnectionManager(), BatchOptions.defaults());
+        RedissonBatch publishBatch = createBatch();
         for (Entry<HashKey, HashValue> entry : hashes.entrySet()) {
             String name = RedissonObject.suffixName(entry.getKey().getName(), RedissonLocalCachedMap.TOPIC_SUFFIX);
             RTopicAsync topic = publishBatch.getTopic(name, LocalCachedMessageCodec.INSTANCE);
@@ -344,14 +341,14 @@ public class RedissonTransaction implements RTransaction {
         }
         
         Map<HashKey, HashValue> hashes = new HashMap<>(localCaches.size());
-        RedissonBatch batch = new RedissonBatch(null, commandExecutor.getConnectionManager(), BatchOptions.defaults());
+        RedissonBatch batch = createBatch();
         for (TransactionalOperation transactionalOperation : operations) {
             if (localCaches.contains(transactionalOperation.getName())) {
                 MapOperation mapOperation = (MapOperation) transactionalOperation;
                 RedissonLocalCachedMap<?, ?> map = (RedissonLocalCachedMap<?, ?>) mapOperation.getMap();
                 
                 HashKey hashKey = new HashKey(transactionalOperation.getName(), transactionalOperation.getCodec());
-                byte[] key = map.toCacheKey(mapOperation.getKey()).getKeyHash();
+                byte[] key = map.getLocalCacheView().toCacheKey(mapOperation.getKey()).getKeyHash();
                 HashValue value = hashes.get(hashKey);
                 if (value == null) {
                     value = new HashValue();
@@ -376,7 +373,7 @@ public class RedissonTransaction implements RTransaction {
         CountDownLatch latch = new CountDownLatch(hashes.size());
         List<RTopic> topics = new ArrayList<>();
         for (Entry<HashKey, HashValue> entry : hashes.entrySet()) {
-            RTopic topic = new RedissonTopic(LocalCachedMessageCodec.INSTANCE, 
+            RTopic topic = RedissonTopic.createRaw(LocalCachedMessageCodec.INSTANCE,
                     commandExecutor, RedissonObject.suffixName(entry.getKey().getName(), requestId + RedissonLocalCachedMap.DISABLED_ACK_SUFFIX));
             topics.add(topic);
             topic.addListener(Object.class, new MessageListener<Object>() {
@@ -390,7 +387,7 @@ public class RedissonTransaction implements RTransaction {
             });
         }
         
-        RedissonBatch publishBatch = new RedissonBatch(null, commandExecutor.getConnectionManager(), BatchOptions.defaults());
+        RedissonBatch publishBatch = createBatch();
         for (Entry<HashKey, HashValue> entry : hashes.entrySet()) {
             String disabledKeysName = RedissonObject.suffixName(entry.getKey().getName(), RedissonLocalCachedMap.DISABLED_KEYS_SUFFIX);
             RMultimapCacheAsync<LocalCachedMapDisabledKey, String> multimap = publishBatch.getListMultimapCache(disabledKeysName, entry.getKey().getCodec());
@@ -438,14 +435,14 @@ public class RedissonTransaction implements RTransaction {
         
         RPromise<Map<HashKey, HashValue>> result = new RedissonPromise<>();
         Map<HashKey, HashValue> hashes = new HashMap<>(localCaches.size());
-        RedissonBatch batch = new RedissonBatch(null, commandExecutor.getConnectionManager(), BatchOptions.defaults());
+        RedissonBatch batch = createBatch();
         for (TransactionalOperation transactionalOperation : operations) {
             if (localCaches.contains(transactionalOperation.getName())) {
                 MapOperation mapOperation = (MapOperation) transactionalOperation;
                 RedissonLocalCachedMap<?, ?> map = (RedissonLocalCachedMap<?, ?>) mapOperation.getMap();
                 
                 HashKey hashKey = new HashKey(transactionalOperation.getName(), transactionalOperation.getCodec());
-                byte[] key = map.toCacheKey(mapOperation.getKey()).getKeyHash();
+                byte[] key = map.getLocalCacheView().toCacheKey(mapOperation.getKey()).getKeyHash();
                 HashValue value = hashes.get(hashKey);
                 if (value == null) {
                     value = new HashValue();
@@ -476,8 +473,8 @@ public class RedissonTransaction implements RTransaction {
                 List<RTopic> topics = new ArrayList<>();
                 for (Entry<HashKey, HashValue> entry : hashes.entrySet()) {
                     String disabledAckName = RedissonObject.suffixName(entry.getKey().getName(), requestId + RedissonLocalCachedMap.DISABLED_ACK_SUFFIX);
-                    RTopic topic = new RedissonTopic(LocalCachedMessageCodec.INSTANCE, 
-                            commandExecutor, disabledAckName);
+                    RTopic topic = RedissonTopic.createRaw(LocalCachedMessageCodec.INSTANCE,
+                                                                commandExecutor, disabledAckName);
                     topics.add(topic);
                     RFuture<Integer> topicFuture = topic.addListenerAsync(Object.class, new MessageListener<Object>() {
                         @Override
@@ -494,7 +491,7 @@ public class RedissonTransaction implements RTransaction {
                 }
                 
                 subscriptionFuture.onComplete((r, ex) -> {
-                        RedissonBatch publishBatch = new RedissonBatch(null, commandExecutor.getConnectionManager(), BatchOptions.defaults());
+                        RedissonBatch publishBatch = createBatch();
                         for (Entry<HashKey, HashValue> entry : hashes.entrySet()) {
                             String disabledKeysName = RedissonObject.suffixName(entry.getKey().getName(), RedissonLocalCachedMap.DISABLED_KEYS_SUFFIX);
                             RMultimapCacheAsync<LocalCachedMapDisabledKey, String> multimap = publishBatch.getListMultimapCache(disabledKeysName, entry.getKey().getCodec());
@@ -541,7 +538,12 @@ public class RedissonTransaction implements RTransaction {
         
         return result;
     }
-    
+
+    private RedissonBatch createBatch() {
+        return new RedissonBatch(null, commandExecutor,
+                                    BatchOptions.defaults().executionMode(BatchOptions.ExecutionMode.IN_MEMORY_ATOMIC));
+    }
+
     protected static String generateId() {
         byte[] id = new byte[16];
         ThreadLocalRandom.current().nextBytes(id);
@@ -556,7 +558,7 @@ public class RedissonTransaction implements RTransaction {
     public void rollback(List<TransactionalOperation> operations) {
         checkState();
 
-        CommandBatchService executorService = new CommandBatchService(commandExecutor.getConnectionManager());
+        CommandBatchService executorService = new CommandBatchService(commandExecutor);
         for (TransactionalOperation transactionalOperation : operations) {
             transactionalOperation.rollback(executorService);
         }
@@ -575,13 +577,13 @@ public class RedissonTransaction implements RTransaction {
     public RFuture<Void> rollbackAsync() {
         checkState();
 
-        CommandBatchService executorService = new CommandBatchService(commandExecutor.getConnectionManager());
+        CommandBatchService executorService = new CommandBatchService(commandExecutor);
         for (TransactionalOperation transactionalOperation : operations) {
             transactionalOperation.rollback(executorService);
         }
 
         RPromise<Void> result = new RedissonPromise<>();
-        RFuture<List<?>> future = executorService.executeAsync();
+        RFuture<BatchResult<?>> future = executorService.executeAsync();
         future.onComplete((res, e) -> {
             if (e != null) {
                 result.tryFailure(new TransactionException("Unable to rollback transaction", e));

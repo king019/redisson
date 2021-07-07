@@ -1,5 +1,5 @@
 /**
- * Copyright (c) 2013-2019 Nikita Koksharov
+ * Copyright (c) 2013-2021 Nikita Koksharov
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -27,15 +27,10 @@ import org.redisson.client.protocol.decoder.MultiDecoder;
  */
 public class RedisCommand<R> {
 
-    public enum ValueType {OBJECT, MAP_VALUE, MAP_KEY, MAP}
-
-    private ValueType outParamType = ValueType.OBJECT;
-
     private final String name;
     private final String subName;
 
-    private MultiDecoder<R> replayMultiDecoder;
-    private Decoder<R> replayDecoder;
+    private final MultiDecoder<R> replayMultiDecoder;
     Convertor<R> convertor = new EmptyConvertor<R>();
 
     /**
@@ -45,20 +40,16 @@ public class RedisCommand<R> {
      * @param name - new command name
      */
     public RedisCommand(RedisCommand<R> command, String name) {
-        this.outParamType = command.outParamType;
         this.name = name;
         this.subName = command.subName;
         this.replayMultiDecoder = command.replayMultiDecoder;
-        this.replayDecoder = command.replayDecoder;
         this.convertor = command.convertor;
     }
     
     public RedisCommand(RedisCommand<R> command, String name, Convertor<R> convertor) {
-        this.outParamType = command.outParamType;
         this.name = name;
         this.subName = command.subName;
         this.replayMultiDecoder = command.replayMultiDecoder;
-        this.replayDecoder = command.replayDecoder;
         this.convertor = convertor;
     }
 
@@ -66,42 +57,18 @@ public class RedisCommand<R> {
         this(name, (String) null);
     }
 
-    public RedisCommand(String name, ValueType outParamType) {
-        this(name, (String) null);
-        this.outParamType = outParamType;
-    }
-
-    public RedisCommand(String name, ValueType outParamType, Convertor<R> convertor) {
-        this(name, (String) null);
-        this.outParamType = outParamType;
-        this.convertor = convertor;
-    }
-    
     public RedisCommand(String name, String subName) {
-        this(name, subName, null, null);
+        this(name, subName, (MultiDecoder<R>) null);
     }
 
     public RedisCommand(String name, String subName, Convertor<R> convertor) {
-        this(name, subName, null, null);
+        this(name, subName);
         this.convertor = convertor;
     }
 
     public RedisCommand(String name, Convertor<R> convertor) {
-        this(name, null, null, null);
+        this(name, null, (MultiDecoder<R>) null);
         this.convertor = convertor;
-    }
-
-    public RedisCommand(String name, Decoder<R> reponseDecoder) {
-        this(name, null, null, reponseDecoder);
-    }
-
-    public RedisCommand(String name, String subName, MultiDecoder<R> replayMultiDecoder) {
-        this(name, subName, replayMultiDecoder, null);
-    }
-
-    public RedisCommand(String name, MultiDecoder<R> replayMultiDecoder, ValueType outParamType) {
-        this(name, null, replayMultiDecoder);
-        this.outParamType = outParamType;
     }
 
     public RedisCommand(String name, MultiDecoder<R> replayMultiDecoder) {
@@ -113,12 +80,15 @@ public class RedisCommand<R> {
         this.convertor = convertor;
     }
 
-    RedisCommand(String name, String subName, MultiDecoder<R> replayMultiDecoder, Decoder<R> reponseDecoder) {
+    public RedisCommand(String name, String subName, MultiDecoder<R> replayMultiDecoder) {
         super();
         this.name = name;
         this.subName = subName;
-        this.replayMultiDecoder = replayMultiDecoder;
-        this.replayDecoder = reponseDecoder;
+        if (replayMultiDecoder != null) {
+            this.replayMultiDecoder = replayMultiDecoder;
+        } else {
+            this.replayMultiDecoder = (parts, state) -> null;
+        }
     }
 
     public String getSubName() {
@@ -129,20 +99,12 @@ public class RedisCommand<R> {
         return name;
     }
 
-    public Decoder<R> getReplayDecoder() {
-        return replayDecoder;
-    }
-
     public MultiDecoder<R> getReplayMultiDecoder() {
         return replayMultiDecoder;
     }
 
     public Convertor<R> getConvertor() {
         return convertor;
-    }
-
-    public ValueType getOutParamType() {
-        return outParamType;
     }
 
     public String toString() {

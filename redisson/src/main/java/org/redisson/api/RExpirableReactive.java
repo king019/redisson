@@ -1,5 +1,5 @@
 /**
- * Copyright (c) 2013-2019 Nikita Koksharov
+ * Copyright (c) 2013-2021 Nikita Koksharov
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -15,6 +15,7 @@
  */
 package org.redisson.api;
 
+import java.time.Instant;
 import java.util.Date;
 import java.util.concurrent.TimeUnit;
 
@@ -40,22 +41,31 @@ public interface RExpirableReactive extends RObjectReactive {
     Mono<Boolean> expire(long timeToLive, TimeUnit timeUnit);
 
     /**
-     * Set an expire date for object in  mode. When expire date comes
-     * the key will automatically be deleted.
+     * Use {@link #expireAt(Instant)} instead
      *
      * @param timestamp - expire date
      * @return <code>true</code> if the timeout was set and <code>false</code> if not
      */
+    @Deprecated
     Mono<Boolean> expireAt(Date timestamp);
 
     /**
-     * Set an expire date for object in  mode. When expire date comes
-     * the key will automatically be deleted.
+     * Use {@link #expireAt(Instant)} instead
      *
      * @param timestamp - expire date in milliseconds (Unix timestamp)
      * @return <code>true</code> if the timeout was set and <code>false</code> if not
      */
+    @Deprecated
     Mono<Boolean> expireAt(long timestamp);
+
+    /**
+     * Set an expire date for object. When expire date comes
+     * the key will automatically be deleted.
+     *
+     * @param instant - expire date
+     * @return <code>true</code> if the timeout was set and <code>false</code> if not
+     */
+    Mono<Boolean> expireAt(Instant instant);
 
     /**
      * Clear an expire timeout or expire date for object in  mode.

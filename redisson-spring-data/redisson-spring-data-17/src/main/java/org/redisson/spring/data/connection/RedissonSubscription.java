@@ -1,5 +1,5 @@
 /**
- * Copyright (c) 2013-2019 Nikita Koksharov
+ * Copyright (c) 2013-2021 Nikita Koksharov
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -15,21 +15,23 @@
  */
 package org.redisson.spring.data.connection;
 
-import java.util.ArrayList;
-import java.util.List;
-
 import org.redisson.api.RFuture;
 import org.redisson.client.BaseRedisPubSubListener;
 import org.redisson.client.ChannelName;
-import org.redisson.client.RedisPubSubListener;
 import org.redisson.client.codec.ByteArrayCodec;
 import org.redisson.client.protocol.pubsub.PubSubType;
+import org.redisson.command.CommandAsyncExecutor;
 import org.redisson.connection.ConnectionManager;
 import org.redisson.pubsub.PubSubConnectionEntry;
 import org.redisson.pubsub.PublishSubscribeService;
 import org.springframework.data.redis.connection.DefaultMessage;
 import org.springframework.data.redis.connection.MessageListener;
 import org.springframework.data.redis.connection.util.AbstractSubscription;
+
+import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.Collection;
+import java.util.List;
 
 /**
  * 
@@ -38,32 +40,35 @@ import org.springframework.data.redis.connection.util.AbstractSubscription;
  */
 public class RedissonSubscription extends AbstractSubscription {
 
-    private final ConnectionManager connectionManager;
+    private final CommandAsyncExecutor commandExecutor;
     private final PublishSubscribeService subscribeService;
     
-    public RedissonSubscription(ConnectionManager connectionManager, PublishSubscribeService subscribeService, MessageListener listener) {
+    public RedissonSubscription(CommandAsyncExecutor commandExecutor, PublishSubscribeService subscribeService, MessageListener listener) {
         super(listener, null, null);
-        this.connectionManager = connectionManager;
+        this.commandExecutor = commandExecutor;
         this.subscribeService = subscribeService;
     }
 
     @Override
     protected void doSubscribe(byte[]... channels) {
-        RedisPubSubListener<?> listener2 = new BaseRedisPubSubListener() {
-            @Override
-            public void onMessage(CharSequence channel, Object message) {
-                DefaultMessage msg = new DefaultMessage(((ChannelName)channel).getName(), (byte[])message);
-                getListener().onMessage(msg, null);
-            }
-        };
-        
-        List<RFuture<?>> list = new ArrayList<RFuture<?>>();
+        List<RFuture<?>> list = new ArrayList<>();
         for (byte[] channel : channels) {
-            RFuture<PubSubConnectionEntry> f = subscribeService.subscribe(ByteArrayCodec.INSTANCE, new ChannelName(channel), listener2);
+            RFuture<PubSubConnectionEntry> f = subscribeService.subscribe(ByteArrayCodec.INSTANCE, new ChannelName(channel), new BaseRedisPubSubListener() {
+                @Override
+                public void onMessage(CharSequence ch, Object message) {
+                    if (!Arrays.equals(((ChannelName) ch).getName(), channel)) {
+                        return;
+                    }
+
+                    byte[] m = toBytes(message);
+                    DefaultMessage msg = new DefaultMessage(((ChannelName) ch).getName(), m);
+                    getListener().onMessage(msg, null);
+                }
+            });
             list.add(f);
         }
         for (RFuture<?> future : list) {
-            connectionManager.getCommandExecutor().syncSubscription(future);
+            commandExecutor.syncSubscription(future);
         }
     }
 
@@ -76,22 +81,32 @@ public class RedissonSubscription extends AbstractSubscription {
 
     @Override
     protected void doPsubscribe(byte[]... patterns) {
-        RedisPubSubListener<?> listener2 = new BaseRedisPubSubListener() {
-            @Override
-            public void onPatternMessage(CharSequence pattern, CharSequence channel, Object message) {
-                DefaultMessage msg = new DefaultMessage(((ChannelName)channel).getName(), (byte[])message);
-                getListener().onMessage(msg, ((ChannelName)pattern).getName());
-            }
-        };
-        
-        List<RFuture<?>> list = new ArrayList<RFuture<?>>();
+        List<RFuture<?>> list = new ArrayList<>();
         for (byte[] channel : patterns) {
-            RFuture<PubSubConnectionEntry> f = subscribeService.psubscribe(new ChannelName(channel), ByteArrayCodec.INSTANCE, listener2);
+            RFuture<Collection<PubSubConnectionEntry>> f = subscribeService.psubscribe(new ChannelName(channel), ByteArrayCodec.INSTANCE, new BaseRedisPubSubListener() {
+                @Override
+                public void onPatternMessage(CharSequence pattern, CharSequence ch, Object message) {
+                    if (!Arrays.equals(((ChannelName) pattern).getName(), channel)) {
+                        return;
+                    }
+
+                    byte[] m = toBytes(message);
+                    DefaultMessage msg = new DefaultMessage(((ChannelName)ch).getName(), m);
+                    getListener().onMessage(msg, ((ChannelName)pattern).getName());
+                }
+            });
             list.add(f);
         }
         for (RFuture<?> future : list) {
-            connectionManager.getCommandExecutor().syncSubscription(future);
+            commandExecutor.syncSubscription(future);
         }
+    }
+
+    private byte[] toBytes(Object message) {
+        if (message instanceof String) {
+            return  ((String) message).getBytes();
+        }
+        return (byte[]) message;
     }
 
     @Override
@@ -103,8 +118,8 @@ public class RedissonSubscription extends AbstractSubscription {
 
     @Override
     protected void doClose() {
-        doUnsubscribe(false, (byte[][]) getChannels().toArray(new byte[getChannels().size()][]));
-        doPUnsubscribe(false, (byte[][]) getPatterns().toArray(new byte[getPatterns().size()][]));
+        doUnsubscribe(false, getChannels().toArray(new byte[getChannels().size()][]));
+        doPUnsubscribe(false, getPatterns().toArray(new byte[getPatterns().size()][]));
     }
 
 }

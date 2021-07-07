@@ -1,5 +1,5 @@
 /**
- * Copyright (c) 2013-2019 Nikita Koksharov
+ * Copyright (c) 2013-2021 Nikita Koksharov
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -14,8 +14,6 @@
  * limitations under the License.
  */
 package org.redisson.api;
-
-import java.util.concurrent.TimeUnit;
 
 import org.redisson.client.RedisException;
 import org.redisson.client.codec.Codec;
@@ -431,40 +429,17 @@ public interface RBatch {
      */
     RFuture<BatchResult<?>> executeAsync();
 
-    /*
-     * Use BatchOptions#atomic
+    /**
+     * Discard batched commands and release allocated buffers used for parameters encoding.
      */
-    @Deprecated
-    RBatch atomic();
-    
-    /*
-     * Use BatchOptions#skipResult
-     */
-    @Deprecated
-    RBatch skipResult();
+    void discard();
 
-    /*
-     * Use BatchOptions#syncSlaves
+    /**
+     * Discard batched commands and release allocated buffers used for parameters encoding.
+     *
+     * @return void
      */
-    @Deprecated
-    RBatch syncSlaves(int slaves, long timeout, TimeUnit unit);
-    
-    /*
-     * Use BatchOptions#responseTimeout
-     */
-    @Deprecated
-    RBatch timeout(long timeout, TimeUnit unit);
+    RFuture<Void> discardAsync();
 
-    /*
-     * Use BatchOptions#retryInterval
-     */
-    @Deprecated
-    RBatch retryInterval(long retryInterval, TimeUnit unit);
 
-    /*
-     * Use BatchOptions#retryAttempts
-     */
-    @Deprecated
-    RBatch retryAttempts(int retryAttempts);
-    
 }

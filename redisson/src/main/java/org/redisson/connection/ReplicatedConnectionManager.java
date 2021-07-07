@@ -1,5 +1,5 @@
 /**
- * Copyright (c) 2013-2019 Nikita Koksharov
+ * Copyright (c) 2013-2021 Nikita Koksharov
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -15,29 +15,25 @@
  */
 package org.redisson.connection;
 
-import java.net.URI;
-import java.util.Map;
-import java.util.UUID;
-import java.util.concurrent.TimeUnit;
-import java.util.concurrent.atomic.AtomicInteger;
-import java.util.concurrent.atomic.AtomicReference;
-
+import io.netty.util.concurrent.ScheduledFuture;
 import org.redisson.api.RFuture;
 import org.redisson.client.RedisClient;
 import org.redisson.client.RedisConnection;
 import org.redisson.client.RedisConnectionException;
 import org.redisson.client.RedisException;
 import org.redisson.client.protocol.RedisCommands;
-import org.redisson.config.BaseMasterSlaveServersConfig;
-import org.redisson.config.Config;
-import org.redisson.config.MasterSlaveServersConfig;
-import org.redisson.config.ReadMode;
-import org.redisson.config.ReplicatedServersConfig;
+import org.redisson.config.*;
 import org.redisson.connection.ClientConnectionsEntry.FreezeReason;
+import org.redisson.misc.RedisURI;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import io.netty.util.concurrent.ScheduledFuture;
+import java.net.InetSocketAddress;
+import java.util.Map;
+import java.util.UUID;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicReference;
 
 /**
  * {@link ConnectionManager} for AWS ElastiCache Replication Groups or Azure Redis Cache. By providing all nodes
@@ -53,7 +49,7 @@ public class ReplicatedConnectionManager extends MasterSlaveConnectionManager {
 
     private final Logger log = LoggerFactory.getLogger(getClass());
 
-    private AtomicReference<URI> currentMaster = new AtomicReference<URI>();
+    private final AtomicReference<RedisURI> currentMaster = new AtomicReference<>();
 
     private ScheduledFuture<?> monitorFuture;
 
@@ -68,8 +64,9 @@ public class ReplicatedConnectionManager extends MasterSlaveConnectionManager {
         this.config = create(cfg);
         initTimer(this.config);
 
-        for (URI addr : cfg.getNodeAddresses()) {
-            RFuture<RedisConnection> connectionFuture = connectToNode(cfg, addr, null, addr.getHost());
+        for (String address : cfg.getNodeAddresses()) {
+            RedisURI addr = new RedisURI(address);
+            RFuture<RedisConnection> connectionFuture = connectToNode(cfg, addr, addr.getHost());
             connectionFuture.awaitUninterruptibly();
             RedisConnection connection = connectionFuture.getNow();
             if (connection == null) {
@@ -84,10 +81,10 @@ public class ReplicatedConnectionManager extends MasterSlaveConnectionManager {
                 }
                 currentMaster.set(addr);
                 log.info("{} is the master", addr);
-                this.config.setMasterAddress(addr);
+                this.config.setMasterAddress(addr.toString());
             } else {
                 log.info("{} is a slave", addr);
-                this.config.addSlaveAddress(addr);
+                this.config.addSlaveAddress(addr.toString());
             }
         }
 
@@ -123,12 +120,13 @@ public class ReplicatedConnectionManager extends MasterSlaveConnectionManager {
                     return;
                 }
 
-                URI master = currentMaster.get();
+                RedisURI master = currentMaster.get();
                 log.debug("Current master: {}", master);
                 
                 AtomicInteger count = new AtomicInteger(cfg.getNodeAddresses().size());
-                for (URI addr : cfg.getNodeAddresses()) {
-                    RFuture<RedisConnection> connectionFuture = connectToNode(cfg, addr, null, addr.getHost());
+                for (String address : cfg.getNodeAddresses()) {
+                    RedisURI addr = new RedisURI(address);
+                    RFuture<RedisConnection> connectionFuture = connectToNode(cfg, addr, addr.getHost());
                     connectionFuture.onComplete((connection, exc) -> {
                         if (exc != null) {
                             log.error(exc.getMessage(), exc);
@@ -166,7 +164,7 @@ public class ReplicatedConnectionManager extends MasterSlaveConnectionManager {
                                     });
                                 }
                             } else if (!config.checkSkipSlavesInit()) {
-                                slaveUp(addr);
+                                slaveUp(addr, connection.getRedisClient().getAddr());
                             }
                             
                             if (count.decrementAndGet() == 0) {
@@ -180,10 +178,10 @@ public class ReplicatedConnectionManager extends MasterSlaveConnectionManager {
         }, cfg.getScanInterval(), TimeUnit.MILLISECONDS);
     }
 
-    private void slaveUp(URI uri) {
+    private void slaveUp(RedisURI uri, InetSocketAddress address) {
         MasterSlaveEntry entry = getEntry(singleSlotRange.getStartSlot());
-        if (entry.slaveUp(uri, FreezeReason.MANAGER)) {
-            log.info("slave: {} has up", uri);
+        if (entry.slaveUp(address, FreezeReason.MANAGER)) {
+            log.info("slave: {} is up", uri);
         }
     }
     

@@ -1,5 +1,5 @@
 /**
- * Copyright (c) 2013-2019 Nikita Koksharov
+ * Copyright (c) 2013-2021 Nikita Koksharov
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -31,7 +31,7 @@ import org.redisson.client.codec.Codec;
 import org.redisson.reactive.RedissonSetReactive;
 import org.redisson.transaction.RedissonTransaction;
 
-import io.reactivex.Completable;
+import io.reactivex.rxjava3.core.Completable;
 
 /**
  * 
@@ -76,14 +76,14 @@ public class RedissonTransactionRx implements RTransactionRx {
     public <K, V> RMapCacheRx<K, V> getMapCache(String name, Codec codec) {
         RMapCache<K, V> map = transaction.<K, V>getMapCache(name, codec);
         return RxProxyBuilder.create(executorService, map, 
-                new RedissonMapCacheRx<K, V>(map), RMapCacheRx.class);
+                new RedissonMapCacheRx<K, V>(map, executorService), RMapCacheRx.class);
     }
 
     @Override
     public <K, V> RMapCacheRx<K, V> getMapCache(String name) {
         RMapCache<K, V> map = transaction.<K, V>getMapCache(name);
         return RxProxyBuilder.create(executorService, map, 
-                new RedissonMapCacheRx<K, V>(map), RMapCacheRx.class);
+                new RedissonMapCacheRx<K, V>(map, executorService), RMapCacheRx.class);
     }
 
     @Override

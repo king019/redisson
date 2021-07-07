@@ -1,12 +1,58 @@
 package org.redisson;
 
-import java.util.BitSet;
-
-import static org.assertj.core.api.Assertions.*;
-import org.junit.Test;
+import org.junit.jupiter.api.Test;
 import org.redisson.api.RBitSet;
 
+import java.util.BitSet;
+
+import static org.assertj.core.api.Assertions.assertThat;
+
 public class RedissonBitSetTest extends BaseTest {
+
+    @Test
+    public void testUnsigned() {
+        RBitSet bs = redisson.getBitSet("testUnsigned");
+        assertThat(bs.setUnsigned(8, 1, 120)).isZero();
+        assertThat(bs.incrementAndGetUnsigned(8, 1, 1)).isEqualTo(121);
+        assertThat(bs.getUnsigned(8, 1)).isEqualTo(121);
+    }
+
+    @Test
+    public void testSigned() {
+        RBitSet bs = redisson.getBitSet("testSigned");
+        assertThat(bs.setSigned(8, 1, -120)).isZero();
+        assertThat(bs.incrementAndGetSigned(8, 1, 1)).isEqualTo(-119);
+        assertThat(bs.getSigned(8, 1)).isEqualTo(-119);
+    }
+
+    @Test
+    public void testIncrement() {
+        RBitSet bs2 = redisson.getBitSet("testbitset1");
+        assertThat(bs2.setByte(2, (byte)12)).isZero();
+        assertThat(bs2.getByte(2)).isEqualTo((byte)12);
+
+        assertThat(bs2.incrementAndGetByte(2, (byte)12)).isEqualTo((byte) 24);
+        assertThat(bs2.getByte(2)).isEqualTo((byte)24);
+    }
+
+    @Test
+    public void testSetGetNumber() {
+        RBitSet bs = redisson.getBitSet("testbitset");
+        assertThat(bs.setLong(2, 12L)).isZero();
+        assertThat(bs.getLong(2)).isEqualTo(12);
+
+        RBitSet bs2 = redisson.getBitSet("testbitset1");
+        assertThat(bs2.setByte(2, (byte)12)).isZero();
+        assertThat(bs2.getByte(2)).isEqualTo((byte)12);
+
+        RBitSet bs3 = redisson.getBitSet("testbitset2");
+        assertThat(bs3.setShort(2, (short)2312)).isZero();
+        assertThat(bs3.getShort(2)).isEqualTo((short)2312);
+
+        RBitSet bs4 = redisson.getBitSet("testbitset3");
+        assertThat(bs4.setInteger(2, 323241)).isZero();
+        assertThat(bs4.getInteger(2)).isEqualTo(323241);
+    }
 
     @Test
     public void testIndexRange() {
@@ -85,8 +131,8 @@ public class RedissonBitSetTest extends BaseTest {
         assertThat(bitset.cardinality()).isZero();
         assertThat(bitset.size()).isZero();
 
-        bitset.set(10, true);
-        bitset.set(31, true);
+        assertThat(bitset.set(10, true)).isFalse();
+        assertThat(bitset.set(31, true)).isFalse();
         assertThat(bitset.get(0)).isFalse();
         assertThat(bitset.get(31)).isTrue();
         assertThat(bitset.get(10)).isTrue();
@@ -113,6 +159,10 @@ public class RedissonBitSetTest extends BaseTest {
         assertThat(bitset.get(3)).isTrue();
         assertThat(bitset.get(41)).isTrue();
         assertThat(bs.cardinality()).isEqualTo(2);
+        
+        RBitSet emptyBitSet = redisson.getBitSet("emptybitset");
+        BitSet s = emptyBitSet.asBitSet();
+        assertThat(s.cardinality()).isZero();
     }
 
     @Test

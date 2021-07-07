@@ -1,5 +1,5 @@
 /**
- * Copyright (c) 2013-2019 Nikita Koksharov
+ * Copyright (c) 2013-2021 Nikita Koksharov
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -15,28 +15,28 @@
  */
 package org.redisson.connection;
 
-import java.net.InetSocketAddress;
-import java.net.URI;
-import java.util.Collection;
-import java.util.UUID;
-import java.util.concurrent.ExecutorService;
-import java.util.concurrent.TimeUnit;
-
+import io.netty.channel.EventLoopGroup;
+import io.netty.util.Timeout;
+import io.netty.util.TimerTask;
+import io.netty.util.concurrent.Future;
+import org.redisson.ElementsSubscribeService;
 import org.redisson.api.NodeType;
 import org.redisson.api.RFuture;
 import org.redisson.client.RedisClient;
 import org.redisson.client.RedisConnection;
+import org.redisson.client.RedisNodeNotFoundException;
 import org.redisson.client.codec.Codec;
 import org.redisson.client.protocol.RedisCommand;
-import org.redisson.command.CommandSyncService;
 import org.redisson.config.Config;
 import org.redisson.config.MasterSlaveServersConfig;
 import org.redisson.misc.InfinitySemaphoreLatch;
+import org.redisson.misc.RedisURI;
 import org.redisson.pubsub.PublishSubscribeService;
 
-import io.netty.channel.EventLoopGroup;
-import io.netty.util.Timeout;
-import io.netty.util.TimerTask;
+import java.net.InetSocketAddress;
+import java.util.Collection;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.TimeUnit;
 
 /**
  *
@@ -45,15 +45,17 @@ import io.netty.util.TimerTask;
  */
 public interface ConnectionManager {
     
-    UUID getId();
+    RedisURI applyNatMap(RedisURI address);
     
-    CommandSyncService getCommandExecutor();
+    String getId();
     
+    ElementsSubscribeService getElementsSubscribeService();
+
     PublishSubscribeService getSubscribeService();
     
     ExecutorService getExecutor();
     
-    URI getLastClusterNode();
+    RedisURI getLastClusterNode();
     
     Config getCfg();
 
@@ -76,7 +78,9 @@ public interface ConnectionManager {
     Codec getCodec();
 
     Collection<MasterSlaveEntry> getEntrySet();
-    
+
+    MasterSlaveEntry getEntry(String name);
+
     MasterSlaveEntry getEntry(int slot);
     
     MasterSlaveEntry getEntry(InetSocketAddress address);
@@ -89,11 +93,11 @@ public interface ConnectionManager {
 
     RFuture<RedisConnection> connectionWriteOp(NodeSource source, RedisCommand<?> command);
 
-    RedisClient createClient(NodeType type, URI address, int timeout, int commandTimeout, String sslHostname);
+    RedisClient createClient(NodeType type, RedisURI address, int timeout, int commandTimeout, String sslHostname);
 
-    RedisClient createClient(NodeType type, InetSocketAddress address, URI uri, String sslHostname);
+    RedisClient createClient(NodeType type, InetSocketAddress address, RedisURI uri, String sslHostname);
     
-    RedisClient createClient(NodeType type, URI address, String sslHostname);
+    RedisClient createClient(NodeType type, RedisURI address, String sslHostname);
 
     MasterSlaveEntry getEntry(RedisClient redisClient);
     
@@ -107,6 +111,8 @@ public interface ConnectionManager {
 
     InfinitySemaphoreLatch getShutdownLatch();
     
-    RFuture<Boolean> getShutdownPromise();
+    Future<Void> getShutdownPromise();
+
+    RedisNodeNotFoundException createNodeNotFoundException(NodeSource source);
 
 }

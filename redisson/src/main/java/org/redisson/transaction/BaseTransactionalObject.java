@@ -1,5 +1,5 @@
 /**
- * Copyright (c) 2013-2019 Nikita Koksharov
+ * Copyright (c) 2013-2021 Nikita Koksharov
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -15,6 +15,7 @@
  */
 package org.redisson.transaction;
 
+import java.time.Instant;
 import java.util.Date;
 import java.util.concurrent.TimeUnit;
 
@@ -32,11 +33,15 @@ public class BaseTransactionalObject {
     }
     
     public RFuture<Boolean> expireAtAsync(Date timestamp) {
-        throw new UnsupportedOperationException("expireAt method is not supported in transaction");
+        throw new UnsupportedOperationException("expire method is not supported in transaction");
     }
-    
+
+    public RFuture<Boolean> expireAtAsync(Instant timestamp) {
+        throw new UnsupportedOperationException("expire method is not supported in transaction");
+    }
+
     public RFuture<Boolean> expireAtAsync(long timestamp) {
-        throw new UnsupportedOperationException("expireAt method is not supported in transaction");
+        throw new UnsupportedOperationException("expire method is not supported in transaction");
     }
     
     public RFuture<Boolean> clearExpireAsync() {

@@ -12,8 +12,9 @@ import java.util.List;
 import java.util.Map;
 import java.util.concurrent.TimeUnit;
 
-import org.junit.Assert;
-import org.junit.Test;
+import org.junit.jupiter.api.Assertions;
+import org.junit.jupiter.api.Test;
+import org.redisson.api.RLockReactive;
 import org.redisson.api.RMapCacheReactive;
 import org.redisson.api.RMapReactive;
 import org.redisson.codec.MsgPackJacksonCodec;
@@ -123,6 +124,17 @@ public class RedissonMapCacheReactiveTest extends BaseReactiveTest {
     }
 
     @Test
+    public void testLock() {
+        RMapCacheReactive<Integer, Integer> map = redisson.getMapCache("getAll");
+        RLockReactive lock = map.getLock(123);
+        assertThat(sync(lock.isLocked())).isFalse();
+        sync(lock.lock());
+        assertThat(sync(lock.isLocked())).isTrue();
+        sync(lock.unlock());
+        assertThat(sync(lock.isLocked())).isFalse();
+    }
+
+    @Test
     public void testGetAll() throws InterruptedException {
         RMapCacheReactive<Integer, Integer> map = redisson.getMapCache("getAll");
         sync(map.put(1, 100));
@@ -135,12 +147,12 @@ public class RedissonMapCacheReactiveTest extends BaseReactiveTest {
         Map<Integer, Integer> expectedMap = new HashMap<Integer, Integer>();
         expectedMap.put(2, 200);
         expectedMap.put(3, 300);
-        Assert.assertEquals(expectedMap, filtered);
+        Assertions.assertEquals(expectedMap, filtered);
 
         Thread.sleep(1000);
 
         Map<Integer, Integer> filteredAgain = sync(map.getAll(new HashSet<Integer>(Arrays.asList(2, 3, 5))));
-        Assert.assertTrue(filteredAgain.isEmpty());
+        Assertions.assertTrue(filteredAgain.isEmpty());
     }
 
     @Test
@@ -156,7 +168,7 @@ public class RedissonMapCacheReactiveTest extends BaseReactiveTest {
         Map<String, Integer> expectedMap = new HashMap<String, Integer>();
         expectedMap.put("B", 200);
         expectedMap.put("C", 300);
-        Assert.assertEquals(expectedMap, filtered);
+        Assertions.assertEquals(expectedMap, filtered);
     }
 
     @Test
@@ -170,7 +182,7 @@ public class RedissonMapCacheReactiveTest extends BaseReactiveTest {
 
         Thread.sleep(1000);
 
-        assertThat(toIterator(cache.keyIterator())).containsOnly("0", "2", "3");
+        assertThat(toIterator(cache.keyIterator())).toIterable().containsOnly("0", "2", "3");
     }
 
     @Test
@@ -182,7 +194,7 @@ public class RedissonMapCacheReactiveTest extends BaseReactiveTest {
 
         Thread.sleep(500);
 
-        Assert.assertEquals(0, sync(cache.size()).intValue());
+        Assertions.assertEquals(0, sync(cache.size()).intValue());
     }
 
     @Test
@@ -194,7 +206,7 @@ public class RedissonMapCacheReactiveTest extends BaseReactiveTest {
 
         Thread.sleep(500);
 
-        Assert.assertEquals(0, sync(cache.size()).intValue());
+        Assertions.assertEquals(0, sync(cache.size()).intValue());
     }
 
     @Test
@@ -208,7 +220,7 @@ public class RedissonMapCacheReactiveTest extends BaseReactiveTest {
 
         Thread.sleep(500);
 
-        Assert.assertEquals(1, sync(cache.size()).intValue());
+        Assertions.assertEquals(1, sync(cache.size()).intValue());
     }
 
     @Test
@@ -221,7 +233,7 @@ public class RedissonMapCacheReactiveTest extends BaseReactiveTest {
         sync(map.remove(new SimpleKey("33")));
         sync(map.remove(new SimpleKey("5")));
 
-        Assert.assertEquals(1, sync(map.size()).intValue());
+        Assertions.assertEquals(1, sync(map.size()).intValue());
     }
 
     @Test
@@ -243,15 +255,15 @@ public class RedissonMapCacheReactiveTest extends BaseReactiveTest {
     @Test
     public void testContainsValue() throws InterruptedException {
         RMapCacheReactive<SimpleKey, SimpleValue> map = redisson.getMapCache("simple31", new MsgPackJacksonCodec());
-        Assert.assertFalse(sync(map.containsValue(new SimpleValue("34"))));
+        Assertions.assertFalse(sync(map.containsValue(new SimpleValue("34"))));
         sync(map.put(new SimpleKey("33"), new SimpleValue("44"), 1, TimeUnit.SECONDS));
 
-        Assert.assertTrue(sync(map.containsValue(new SimpleValue("44"))));
-        Assert.assertFalse(sync(map.containsValue(new SimpleValue("34"))));
+        Assertions.assertTrue(sync(map.containsValue(new SimpleValue("44"))));
+        Assertions.assertFalse(sync(map.containsValue(new SimpleValue("34"))));
 
         Thread.sleep(1000);
 
-        Assert.assertFalse(sync(map.containsValue(new SimpleValue("44"))));
+        Assertions.assertFalse(sync(map.containsValue(new SimpleValue("44"))));
     }
 
     @Test
@@ -259,12 +271,12 @@ public class RedissonMapCacheReactiveTest extends BaseReactiveTest {
         RMapCacheReactive<SimpleKey, SimpleValue> map = redisson.getMapCache("simple");
         sync(map.put(new SimpleKey("33"), new SimpleValue("44"), 1, TimeUnit.SECONDS));
 
-        Assert.assertTrue(sync(map.containsKey(new SimpleKey("33"))));
-        Assert.assertFalse(sync(map.containsKey(new SimpleKey("34"))));
+        Assertions.assertTrue(sync(map.containsKey(new SimpleKey("33"))));
+        Assertions.assertFalse(sync(map.containsKey(new SimpleKey("34"))));
 
         Thread.sleep(1000);
 
-        Assert.assertFalse(sync(map.containsKey(new SimpleKey("33"))));
+        Assertions.assertFalse(sync(map.containsKey(new SimpleKey("33"))));
     }
 
     @Test
@@ -273,47 +285,47 @@ public class RedissonMapCacheReactiveTest extends BaseReactiveTest {
         sync(map.put(new SimpleKey("1"), new SimpleValue("2"), 1, TimeUnit.SECONDS));
 
         boolean res = sync(map.remove(new SimpleKey("1"), new SimpleValue("2")));
-        Assert.assertTrue(res);
+        Assertions.assertTrue(res);
 
         SimpleValue val1 = sync(map.get(new SimpleKey("1")));
-        Assert.assertNull(val1);
+        Assertions.assertNull(val1);
 
-        Assert.assertEquals(0, sync(map.size()).intValue());
+        Assertions.assertEquals(0, sync(map.size()).intValue());
     }
 
     @Test
     public void testScheduler() throws InterruptedException {
         RMapCacheReactive<SimpleKey, SimpleValue> map = redisson.getMapCache("simple", new MsgPackJacksonCodec());
-        Assert.assertNull(sync(map.get(new SimpleKey("33"))));
+        Assertions.assertNull(sync(map.get(new SimpleKey("33"))));
 
         sync(map.put(new SimpleKey("33"), new SimpleValue("44"), 5, TimeUnit.SECONDS));
 
         Thread.sleep(11000);
 
-        Assert.assertEquals(0, sync(map.size()).intValue());
+        Assertions.assertEquals(0, sync(map.size()).intValue());
 
     }
 
     @Test
     public void testPutGet() throws InterruptedException {
         RMapCacheReactive<SimpleKey, SimpleValue> map = redisson.getMapCache("simple01", new MsgPackJacksonCodec());
-        Assert.assertNull(sync(map.get(new SimpleKey("33"))));
+        Assertions.assertNull(sync(map.get(new SimpleKey("33"))));
 
         sync(map.put(new SimpleKey("33"), new SimpleValue("44"), 2, TimeUnit.SECONDS));
 
         SimpleValue val1 = sync(map.get(new SimpleKey("33")));
-        Assert.assertEquals("44", val1.getValue());
+        Assertions.assertEquals("44", val1.getValue());
 
         Thread.sleep(1000);
 
-        Assert.assertEquals(1, sync(map.size()).intValue());
+        Assertions.assertEquals(1, sync(map.size()).intValue());
         SimpleValue val2 = sync(map.get(new SimpleKey("33")));
-        Assert.assertEquals("44", val2.getValue());
-        Assert.assertEquals(1, sync(map.size()).intValue());
+        Assertions.assertEquals("44", val2.getValue());
+        Assertions.assertEquals(1, sync(map.size()).intValue());
 
         Thread.sleep(1000);
 
-        Assert.assertNull(sync(map.get(new SimpleKey("33"))));
+        Assertions.assertNull(sync(map.get(new SimpleKey("33"))));
     }
 
     @Test
@@ -322,20 +334,20 @@ public class RedissonMapCacheReactiveTest extends BaseReactiveTest {
         SimpleKey key = new SimpleKey("1");
         SimpleValue value = new SimpleValue("2");
         sync(map.put(key, value));
-        Assert.assertEquals(value, sync(map.putIfAbsent(key, new SimpleValue("3"), 1, TimeUnit.SECONDS)));
-        Assert.assertEquals(value, sync(map.get(key)));
+        Assertions.assertEquals(value, sync(map.putIfAbsent(key, new SimpleValue("3"), 1, TimeUnit.SECONDS)));
+        Assertions.assertEquals(value, sync(map.get(key)));
 
         sync(map.putIfAbsent(new SimpleKey("4"), new SimpleValue("4"), 1, TimeUnit.SECONDS));
-        Assert.assertEquals(new SimpleValue("4"), sync(map.get(new SimpleKey("4"))));
+        Assertions.assertEquals(new SimpleValue("4"), sync(map.get(new SimpleKey("4"))));
 
         Thread.sleep(1000);
 
-        Assert.assertNull(sync(map.get(new SimpleKey("4"))));
+        Assertions.assertNull(sync(map.get(new SimpleKey("4"))));
 
         SimpleKey key1 = new SimpleKey("2");
         SimpleValue value1 = new SimpleValue("4");
-        Assert.assertNull(sync(map.putIfAbsent(key1, value1, 2, TimeUnit.SECONDS)));
-        Assert.assertEquals(value1, sync(map.get(key1)));
+        Assertions.assertNull(sync(map.putIfAbsent(key1, value1, 2, TimeUnit.SECONDS)));
+        Assertions.assertEquals(value1, sync(map.get(key1)));
     }
 
     @Test
@@ -345,21 +357,21 @@ public class RedissonMapCacheReactiveTest extends BaseReactiveTest {
         sync(map.put(new SimpleKey("1"), new SimpleValue("2")));
         sync(map.put(new SimpleKey("3"), new SimpleValue("4")));
         sync(map.put(new SimpleKey("5"), new SimpleValue("6")));
-        Assert.assertEquals(3, sync(map.size()).intValue());
+        Assertions.assertEquals(3, sync(map.size()).intValue());
 
         sync(map.put(new SimpleKey("1"), new SimpleValue("2")));
         sync(map.put(new SimpleKey("3"), new SimpleValue("4")));
-        Assert.assertEquals(3, sync(map.size()).intValue());
+        Assertions.assertEquals(3, sync(map.size()).intValue());
 
         sync(map.put(new SimpleKey("1"), new SimpleValue("21")));
         sync(map.put(new SimpleKey("3"), new SimpleValue("41")));
-        Assert.assertEquals(3, sync(map.size()).intValue());
+        Assertions.assertEquals(3, sync(map.size()).intValue());
 
         sync(map.put(new SimpleKey("51"), new SimpleValue("6")));
-        Assert.assertEquals(4, sync(map.size()).intValue());
+        Assertions.assertEquals(4, sync(map.size()).intValue());
 
         sync(map.remove(new SimpleKey("3")));
-        Assert.assertEquals(3, sync(map.size()).intValue());
+        Assertions.assertEquals(3, sync(map.size()).intValue());
     }
 
     @Test
@@ -382,11 +394,11 @@ public class RedissonMapCacheReactiveTest extends BaseReactiveTest {
         for (Iterator<Integer> iterator = toIterator(map.keyIterator()); iterator.hasNext();) {
             Integer value = iterator.next();
             if (!keys.remove(value)) {
-                Assert.fail();
+                Assertions.fail();
             }
         }
 
-        Assert.assertEquals(0, keys.size());
+        Assertions.assertEquals(0, keys.size());
     }
 
     @Test
@@ -401,27 +413,11 @@ public class RedissonMapCacheReactiveTest extends BaseReactiveTest {
         for (Iterator<Integer> iterator = toIterator(map.valueIterator()); iterator.hasNext();) {
             Integer value = iterator.next();
             if (!values.remove(value)) {
-                Assert.fail();
+                Assertions.fail();
             }
         }
 
-        Assert.assertEquals(0, values.size());
-    }
-
-    @Test
-    public void testEquals() {
-        RMapCacheReactive<String, String> map = redisson.getMapCache("simple");
-        sync(map.put("1", "7"));
-        sync(map.put("2", "4"));
-        sync(map.put("3", "5"));
-
-        Map<String, String> testMap = new HashMap<String, String>();
-        testMap.put("1", "7");
-        testMap.put("2", "4");
-        testMap.put("3", "5");
-
-        Assert.assertEquals(map, testMap);
-        Assert.assertEquals(testMap.hashCode(), map.hashCode());
+        Assertions.assertEquals(0, values.size());
     }
 
 }

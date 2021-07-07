@@ -1,5 +1,5 @@
 /**
- * Copyright (c) 2013-2019 Nikita Koksharov
+ * Copyright (c) 2013-2021 Nikita Koksharov
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -15,11 +15,6 @@
  */
 package org.redisson;
 
-import java.util.Collection;
-import java.util.Collections;
-import java.util.concurrent.ThreadLocalRandom;
-import java.util.concurrent.TimeUnit;
-
 import org.redisson.api.RFuture;
 import org.redisson.api.RPriorityBlockingQueue;
 import org.redisson.api.RedissonClient;
@@ -27,10 +22,17 @@ import org.redisson.client.RedisConnectionException;
 import org.redisson.client.codec.Codec;
 import org.redisson.client.protocol.RedisCommand;
 import org.redisson.client.protocol.RedisCommands;
-import org.redisson.command.CommandExecutor;
+import org.redisson.command.CommandAsyncExecutor;
 import org.redisson.connection.decoder.ListDrainToDecoder;
 import org.redisson.misc.RPromise;
 import org.redisson.misc.RedissonPromise;
+
+import java.util.Collection;
+import java.util.Collections;
+import java.util.List;
+import java.util.concurrent.ThreadLocalRandom;
+import java.util.concurrent.TimeUnit;
+import java.util.function.Consumer;
 
 /**
  * <p>Distributed and concurrent implementation of {@link java.util.concurrent.PriorityBlockingQueue}.
@@ -42,11 +44,11 @@ import org.redisson.misc.RedissonPromise;
  */
 public class RedissonPriorityBlockingQueue<V> extends RedissonPriorityQueue<V> implements RPriorityBlockingQueue<V> {
 
-    protected RedissonPriorityBlockingQueue(CommandExecutor commandExecutor, String name, RedissonClient redisson) {
+    protected RedissonPriorityBlockingQueue(CommandAsyncExecutor commandExecutor, String name, RedissonClient redisson) {
         super(commandExecutor, name, redisson);
     }
 
-    protected RedissonPriorityBlockingQueue(Codec codec, CommandExecutor commandExecutor, String name, RedissonClient redisson) {
+    protected RedissonPriorityBlockingQueue(Codec codec, CommandAsyncExecutor commandExecutor, String name, RedissonClient redisson) {
         super(codec, commandExecutor, name, redisson);
     }
 
@@ -63,14 +65,14 @@ public class RedissonPriorityBlockingQueue<V> extends RedissonPriorityQueue<V> i
     @Override
     public RFuture<V> takeAsync() {
         RPromise<V> result = new RedissonPromise<V>();
-        takeAsync(result, 0, 0, RedisCommands.LPOP, getName());
+        takeAsync(result, 0, 0, RedisCommands.LPOP, getRawName());
         return result;
     }
 
     protected <T> void takeAsync(RPromise<V> result, long delay, long timeoutInMicro, RedisCommand<T> command, Object... params) {
         long start = System.currentTimeMillis();
         commandExecutor.getConnectionManager().getGroup().schedule(() -> {
-            RFuture<V> future = pollAsync(command, params);
+            RFuture<V> future = wrapLockedAsync(command, params);
             future.onComplete((res, e) -> {
                     if (e != null && !(e instanceof RedisConnectionException)) {
                         result.tryFailure(e);
@@ -107,18 +109,18 @@ public class RedissonPriorityBlockingQueue<V> extends RedissonPriorityQueue<V> i
 
     @Override
     public V take() throws InterruptedException {
-        return get(takeAsync());
+        return commandExecutor.getInterrupted(takeAsync());
     }
 
     public RFuture<V> pollAsync(long timeout, TimeUnit unit) {
         RPromise<V> result = new RedissonPromise<V>();
-        takeAsync(result, 0, unit.toMicros(timeout), RedisCommands.LPOP, getName());
+        takeAsync(result, 0, unit.toMicros(timeout), RedisCommands.LPOP, getRawName());
         return result;
     }
 
     @Override
     public V poll(long timeout, TimeUnit unit) throws InterruptedException {
-        return get(pollAsync(timeout, unit));
+        return commandExecutor.getInterrupted(pollAsync(timeout, unit));
     }
 
     @Override
@@ -129,20 +131,30 @@ public class RedissonPriorityBlockingQueue<V> extends RedissonPriorityQueue<V> i
     @Override
     public RFuture<V> pollLastAndOfferFirstToAsync(String queueName, long timeout, TimeUnit unit) {
         RPromise<V> result = new RedissonPromise<V>();
-        takeAsync(result, 0, unit.toMicros(timeout), RedisCommands.RPOPLPUSH, getName(), queueName);
+        takeAsync(result, 0, unit.toMicros(timeout), RedisCommands.RPOPLPUSH, getRawName(), queueName);
         return result;
     }
 
     @Override
     public V pollLastAndOfferFirstTo(String queueName, long timeout, TimeUnit unit) throws InterruptedException {
-        return get(pollLastAndOfferFirstToAsync(queueName, timeout, unit));
+        return commandExecutor.getInterrupted(pollLastAndOfferFirstToAsync(queueName, timeout, unit));
     }
     
     @Override
     public V takeLastAndOfferFirstTo(String queueName) throws InterruptedException {
-        return get(takeLastAndOfferFirstToAsync(queueName));
+        return commandExecutor.getInterrupted(takeLastAndOfferFirstToAsync(queueName));
     }
-    
+
+    @Override
+    public int subscribeOnElements(Consumer<V> consumer) {
+        return commandExecutor.getConnectionManager().getElementsSubscribeService().subscribeOnElements(this::takeAsync, consumer);
+    }
+
+    @Override
+    public void unsubscribe(int listenerId) {
+        commandExecutor.getConnectionManager().getElementsSubscribeService().unsubscribe(listenerId);
+    }
+
     public RFuture<V> takeLastAndOfferFirstToAsync(String queueName) {
         return pollLastAndOfferFirstToAsync(queueName, 0, TimeUnit.SECONDS);
     }
@@ -168,10 +180,10 @@ public class RedissonPriorityBlockingQueue<V> extends RedissonPriorityQueue<V> i
             throw new NullPointerException();
         }
 
-        return commandExecutor.evalWriteAsync(getName(), codec, new RedisCommand<Object>("EVAL", new ListDrainToDecoder(c)),
+        return commandExecutor.evalWriteAsync(getRawName(), codec, new RedisCommand<Object>("EVAL", new ListDrainToDecoder(c)),
               "local vals = redis.call('lrange', KEYS[1], 0, -1); " +
               "redis.call('ltrim', KEYS[1], -1, 0); " +
-              "return vals", Collections.<Object>singletonList(getName()));
+              "return vals", Collections.<Object>singletonList(getRawName()));
     }
 
     @Override
@@ -193,17 +205,35 @@ public class RedissonPriorityBlockingQueue<V> extends RedissonPriorityQueue<V> i
         if (c == null) {
             throw new NullPointerException();
         }
-        return commandExecutor.evalWriteAsync(getName(), codec, new RedisCommand<Object>("EVAL", new ListDrainToDecoder(c)),
+        return commandExecutor.evalWriteAsync(getRawName(), codec, new RedisCommand<Object>("EVAL", new ListDrainToDecoder(c)),
                 "local elemNum = math.min(ARGV[1], redis.call('llen', KEYS[1])) - 1;" +
                         "local vals = redis.call('lrange', KEYS[1], 0, elemNum); " +
                         "redis.call('ltrim', KEYS[1], elemNum + 1, -1); " +
                         "return vals",
-                Collections.<Object>singletonList(getName()), maxElements);
+                Collections.<Object>singletonList(getRawName()), maxElements);
     }
 
     @Override
     public RFuture<Boolean> offerAsync(V e) {
         throw new UnsupportedOperationException("use offer method");
+    }
+
+    @Override
+    public RFuture<List<V>> pollAsync(int limit) {
+        return wrapLockedAsync(() -> {
+            return commandExecutor.evalWriteAsync(getRawName(), codec, RedisCommands.EVAL_LIST,
+                       "local result = {};"
+                     + "for i = 1, ARGV[1], 1 do " +
+                           "local value = redis.call('lpop', KEYS[1]);" +
+                           "if value ~= false then " +
+                               "table.insert(result, value);" +
+                           "else " +
+                               "return result;" +
+                           "end;" +
+                       "end; " +
+                       "return result;",
+                    Collections.singletonList(getRawName()), limit);
+        });
     }
 
     @Override
@@ -214,5 +244,10 @@ public class RedissonPriorityBlockingQueue<V> extends RedissonPriorityQueue<V> i
     @Override
     public RFuture<Void> putAsync(V e) {
         throw new UnsupportedOperationException("use add method");
+    }
+
+    @Override
+    public List<V> poll(int limit) {
+        return get(pollAsync(limit));
     }
 }

@@ -168,7 +168,7 @@
         <module name="EqualsAvoidNull"/>
         <!--module name="HiddenField"/-->
         <module name="IllegalInstantiation"/>
-        <module name="IllegalThrows"/>
+        <!--module name="IllegalThrows"/-->
         <module name="InnerAssignment"/>
         <module name="MultipleVariableDeclarations"/>
         <!--module name="MagicNumber"/-->
@@ -230,7 +230,7 @@
     </module>
 
     <module name="SuppressionFilter">
-        <property name="file" value="suppressions.xml"/>
+        <property name="file" value="${checkstyle.config.path}/suppressions.xml"/>
         <property name="optional" value="false"/>
     </module>
 

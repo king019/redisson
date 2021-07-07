@@ -1,5 +1,5 @@
 /**
- * Copyright (c) 2013-2019 Nikita Koksharov
+ * Copyright (c) 2013-2021 Nikita Koksharov
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -19,6 +19,7 @@ import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Set;
 
+import org.redisson.client.codec.Codec;
 import org.redisson.client.codec.DoubleCodec;
 import org.redisson.client.handler.State;
 import org.redisson.client.protocol.Decoder;
@@ -34,11 +35,11 @@ import org.springframework.data.redis.connection.RedisZSetCommands.Tuple;
 public class ScoredSortedSetReplayDecoder implements MultiDecoder<Set<Tuple>> {
 
     @Override
-    public Decoder<Object> getDecoder(int paramNum, State state) {
+    public Decoder<Object> getDecoder(Codec codec, int paramNum, State state) {
         if (paramNum % 2 != 0) {
             return DoubleCodec.INSTANCE.getValueDecoder();
         }
-        return null;
+        return MultiDecoder.super.getDecoder(codec, paramNum, state);
     }
     
     @Override

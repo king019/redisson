@@ -1,5 +1,5 @@
 /**
- * Copyright (c) 2013-2019 Nikita Koksharov
+ * Copyright (c) 2013-2021 Nikita Koksharov
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -15,12 +15,17 @@
  */
 package org.redisson.hibernate;
 
-import java.util.Map;
-import java.util.concurrent.TimeUnit;
-
+import org.hibernate.cache.CacheException;
 import org.hibernate.cache.spi.support.DomainDataStorageAccess;
 import org.hibernate.engine.spi.SharedSessionContractImplementor;
+import org.redisson.api.RFuture;
 import org.redisson.api.RMapCache;
+import org.redisson.connection.ConnectionManager;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
+import java.util.Map;
+import java.util.concurrent.TimeUnit;
 
 /**
  * 
@@ -29,18 +34,27 @@ import org.redisson.api.RMapCache;
  */
 public class RedissonStorage implements DomainDataStorageAccess {
 
+    private static final Logger logger = LoggerFactory.getLogger(RedissonStorage.class);
+
     private final RMapCache<Object, Object> mapCache;
-    
+
+    private final ConnectionManager connectionManager;
+
     int ttl;
     int maxIdle;
+    int size;
+    boolean fallback;
+    volatile boolean fallbackMode;
     
-    public RedissonStorage(RMapCache<Object, Object> mapCache, Map<String, Object> properties, String defaultKey) {
+    public RedissonStorage(RMapCache<Object, Object> mapCache, ConnectionManager connectionManager, Map<String, Object> properties, String defaultKey) {
         super();
         this.mapCache = mapCache;
+        this.connectionManager = connectionManager;
         
         String maxEntries = getProperty(properties, mapCache.getName(), defaultKey, RedissonRegionFactory.MAX_ENTRIES_SUFFIX);
         if (maxEntries != null) {
-            mapCache.setMaxSize(Integer.valueOf(maxEntries));
+            size = Integer.valueOf(maxEntries);
+            mapCache.setMaxSize(size);
         }
         String timeToLive = getProperty(properties, mapCache.getName(), defaultKey, RedissonRegionFactory.TTL_SUFFIX);
         if (timeToLive != null) {
@@ -50,6 +64,9 @@ public class RedissonStorage implements DomainDataStorageAccess {
         if (maxIdleTime != null) {
             maxIdle = Integer.valueOf(maxIdleTime);
         }
+
+        String fallbackValue = (String) properties.getOrDefault(RedissonRegionFactory.FALLBACK, "false");
+        fallback = Boolean.valueOf(fallbackValue);
     }
 
     private String getProperty(Map<String, Object> properties, String name, String defaultKey, String suffix) {
@@ -64,34 +81,116 @@ public class RedissonStorage implements DomainDataStorageAccess {
         return null;
     }
 
+    private void ping() {
+        fallbackMode = true;
+        connectionManager.newTimeout(t -> {
+            RFuture<Boolean> future = mapCache.isExistsAsync();
+            future.onComplete((r, ex) -> {
+                if (ex == null) {
+                    fallbackMode = false;
+                } else {
+                    ping();
+                }
+            });
+        }, 1, TimeUnit.SECONDS);
+    }
+
     @Override
     public Object getFromCache(Object key, SharedSessionContractImplementor session) {
-        return mapCache.get(key);
+        if (fallbackMode) {
+            return null;
+        }
+        try {
+            if (maxIdle == 0 && size == 0) {
+                return mapCache.getWithTTLOnly(key);
+            }
+
+            return mapCache.get(key);
+        } catch (Exception e) {
+            if (fallback) {
+                ping();
+                logger.error(e.getMessage(), e);
+                return null;
+            }
+            throw new CacheException(e);
+        }
     }
 
     @Override
     public void putIntoCache(Object key, Object value, SharedSessionContractImplementor session) {
-        mapCache.fastPut(key, value, ttl, TimeUnit.MILLISECONDS, maxIdle, TimeUnit.MILLISECONDS);
+        if (fallbackMode) {
+            return;
+        }
+        try {
+            mapCache.fastPut(key, value, ttl, TimeUnit.MILLISECONDS, maxIdle, TimeUnit.MILLISECONDS);
+        } catch (Exception e) {
+            if (fallback) {
+                ping();
+                logger.error(e.getMessage(), e);
+                return;
+            }
+            throw new CacheException(e);
+        }
     }
 
     @Override
     public boolean contains(Object key) {
-        return mapCache.containsKey(key);
+        if (fallbackMode) {
+            return false;
+        }
+        try {
+            return mapCache.containsKey(key);
+        } catch (Exception e) {
+            if (fallback) {
+                ping();
+                logger.error(e.getMessage(), e);
+                return false;
+            }
+            throw new CacheException(e);
+        }
     }
 
     @Override
     public void evictData() {
-        mapCache.clear();
+        if (fallbackMode) {
+            return;
+        }
+        try {
+            mapCache.clear();
+        } catch (Exception e) {
+            if (fallback) {
+                ping();
+                logger.error(e.getMessage(), e);
+                return;
+            }
+            throw new CacheException(e);
+        }
     }
 
     @Override
     public void evictData(Object key) {
-        mapCache.fastRemove(key);
+        if (fallbackMode) {
+            return;
+        }
+        try {
+            mapCache.fastRemove(key);
+        } catch (Exception e) {
+            if (fallback) {
+                ping();
+                logger.error(e.getMessage(), e);
+                return;
+            }
+            throw new CacheException(e);
+        }
     }
 
     @Override
     public void release() {
-        mapCache.destroy();
+        try {
+            mapCache.destroy();
+        } catch (Exception e) {
+            throw new CacheException(e);
+        }
     }
 
 }

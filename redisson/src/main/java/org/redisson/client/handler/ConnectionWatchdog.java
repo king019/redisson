@@ -1,5 +1,5 @@
 /**
- * Copyright (c) 2013-2019 Nikita Koksharov
+ * Copyright (c) 2013-2021 Nikita Koksharov
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -100,19 +100,30 @@ public class ConnectionWatchdog extends ChannelInboundHandlerAdapter {
         }
     }
 
-    private void tryReconnect(final RedisConnection connection, final int nextAttempt) {
-        if (connection.isClosed() || bootstrap.config().group().isShuttingDown()) {
+    private void tryReconnect(RedisConnection connection, int nextAttempt) {
+        if (connection.getRedisClient().isShutdown()
+                || connection.isClosed()
+                    || bootstrap.config().group().isShuttingDown()) {
             return;
         }
 
-        log.debug("reconnecting {} to {} ", connection, connection.getRedisClient().getAddr(), connection);
+        log.debug("reconnecting {} to {} ", connection, connection.getRedisClient().getAddr());
 
         try {
             bootstrap.connect(connection.getRedisClient().getAddr()).addListener(new ChannelFutureListener() {
 
                 @Override
                 public void operationComplete(final ChannelFuture future) throws Exception {
-                    if (connection.isClosed() || bootstrap.config().group().isShuttingDown()) {
+                    if (connection.getRedisClient().isShutdown()
+                            || connection.isClosed()
+                                || bootstrap.config().group().isShuttingDown()) {
+                        if (future.isSuccess()) {
+                            Channel ch = future.channel();
+                            RedisConnection con = RedisConnection.getFrom(ch);
+                            if (con != null) {
+                                con.closeAsync();
+                            }
+                        }
                         return;
                     }
 
@@ -126,8 +137,14 @@ public class ConnectionWatchdog extends ChannelInboundHandlerAdapter {
                             RedisConnection c = RedisConnection.getFrom(channel);
                             c.getConnectionPromise().onComplete((res, e) -> {
                                 if (e == null) {
+                                    if (connection.getRedisClient().isShutdown()
+                                            || connection.isClosed()) {
+                                        channel.close();
+                                        return;
+                                    } else {
+                                        log.debug("{} connected to {}, command: {}", connection, connection.getRedisClient().getAddr(), connection.getCurrentCommand());
+                                    }
                                     refresh(connection, channel);
-                                    log.debug("{} connected to {}, command: {}", connection, connection.getRedisClient().getAddr(), connection.getCurrentCommand());
                                 } else {
                                     channel.close();
                                     reconnect(connection, nextAttempt);
@@ -177,14 +194,12 @@ public class ConnectionWatchdog extends ChannelInboundHandlerAdapter {
             return;
         }
 
-        log.debug("blocking queue sent " + connection);
         ChannelFuture future = connection.send(currentCommand);
-        final CommandData<?, ?> cd = currentCommand;
         future.addListener(new ChannelFutureListener() {
             @Override
             public void operationComplete(ChannelFuture future) throws Exception {
                 if (!future.isSuccess()) {
-                    log.error("Can't reconnect blocking queue to new connection. {}", cd);
+                    log.error("Can't reconnect blocking queue by command: {} using connection: {}", currentCommand, connection);
                 }
             }
         });
