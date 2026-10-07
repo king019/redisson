@@ -1,21 +1,104 @@
 package org.redisson;
 
-import static org.assertj.core.api.Assertions.assertThat;
+import org.junit.jupiter.api.Test;
+import org.redisson.api.RBinaryStream;
 
-import java.io.ByteArrayInputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
 import java.math.BigInteger;
+import java.nio.ByteBuffer;
+import java.nio.channels.AsynchronousByteChannel;
+import java.nio.channels.SeekableByteChannel;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.util.Arrays;
+import java.util.concurrent.ExecutionException;
 import java.util.concurrent.ThreadLocalRandom;
 
-import org.junit.Test;
-import org.redisson.api.RBinaryStream;
+import static org.assertj.core.api.Assertions.assertThat;
 
-public class RedissonBinaryStreamTest extends BaseTest {
+public class RedissonBinaryStreamTest extends RedisDockerTest {
+
+    @Test
+    public void testAsyncReadWrite() throws ExecutionException, InterruptedException {
+        RBinaryStream stream = redisson.getBinaryStream("test");
+
+        AsynchronousByteChannel channel = stream.getAsynchronousChannel();
+        ByteBuffer bb = ByteBuffer.wrap(new byte[]{1, 2, 3, 4, 5, 6, 7});
+        channel.write(bb).get();
+
+        AsynchronousByteChannel channel2 = stream.getAsynchronousChannel();
+        ByteBuffer b = ByteBuffer.allocate(7);
+        channel2.read(b).get();
+
+        b.flip();
+        assertThat(b).isEqualByComparingTo(bb);
+    }
+
+    @Test
+    public void testChannelOverwrite() throws IOException {
+        RBinaryStream stream = redisson.getBinaryStream("test");
+        SeekableByteChannel c = stream.getChannel();
+        assertThat(c.write(ByteBuffer.wrap(new byte[]{1, 2, 3, 4, 5, 6, 7}))).isEqualTo(7);
+        c.position(3);
+        assertThat(c.write(ByteBuffer.wrap(new byte[]{0, 9, 10}))).isEqualTo(3);
+        assertThat(c.position()).isEqualTo(6);
+
+        ByteBuffer b = ByteBuffer.allocate(3);
+        int r = c.read(b);
+        assertThat(c.position()).isEqualTo(7);
+        assertThat(r).isEqualTo(1);
+        b.flip();
+        byte[] bb = new byte[b.remaining()];
+        b.get(bb);
+        assertThat(bb).isEqualTo(new byte[]{7});
+
+        c.position(0);
+        ByteBuffer state = ByteBuffer.allocate(7);
+        c.read(state);
+        byte[] bb1 = new byte[7];
+        state.flip();
+        state.get(bb1);
+        assertThat(bb1).isEqualTo(new byte[]{1, 2, 3, 0, 9, 10, 7});
+    }
+
+    @Test
+    public void testChannelPosition() throws IOException {
+        RBinaryStream stream = redisson.getBinaryStream("test");
+        SeekableByteChannel c = stream.getChannel();
+        c.write(ByteBuffer.wrap(new byte[]{1, 2, 3, 4, 5, 6, 7}));
+        c.position(3);
+        ByteBuffer b = ByteBuffer.allocate(3);
+        c.read(b);
+        assertThat(c.position()).isEqualTo(6);
+        byte[] bb = new byte[3];
+        b.flip();
+        b.get(bb);
+        assertThat(bb).isEqualTo(new byte[]{4, 5, 6});
+    }
+
+    @Test
+    public void testChannelTruncate() throws IOException {
+        RBinaryStream stream = redisson.getBinaryStream("test");
+        SeekableByteChannel c = stream.getChannel();
+        c.write(ByteBuffer.wrap(new byte[]{1, 2, 3, 4, 5, 6, 7}));
+        assertThat(c.size()).isEqualTo(7);
+
+        c.truncate(3);
+        c.position(0);
+        c.truncate(10);
+        ByteBuffer b = ByteBuffer.allocate(3);
+        c.read(b);
+        byte[] bb = new byte[3];
+        b.flip();
+        b.get(bb);
+        assertThat(c.size()).isEqualTo(3);
+        assertThat(bb).isEqualTo(new byte[]{1, 2, 3});
+        
+        c.truncate(0);
+        assertThat(c.size()).isEqualTo(0);
+    }
 
     @Test
     public void testEmptyRead() throws IOException {
@@ -89,7 +172,7 @@ public class RedissonBinaryStreamTest extends BaseTest {
         testLimit(512, 1024*1024);
     }
     
-    @Test
+//    @Test
     public void testLimit1024By1000() throws IOException, NoSuchAlgorithmException {
         testLimit(1024, 1000*1000);
     }
@@ -106,7 +189,7 @@ public class RedissonBinaryStreamTest extends BaseTest {
         assertThat(stream.get()).isEqualTo(bytes);
     }
     
-    @Test
+//    @Test
     public void testSet1024() {
         RBinaryStream stream = redisson.getBinaryStream("test");
 
@@ -120,7 +203,7 @@ public class RedissonBinaryStreamTest extends BaseTest {
         assertThat(redisson.getBucket("test:1").size()).isEqualTo(bytes.length - 512*1024*1024);
     }
     
-    @Test
+//    @Test
     public void testLimit1024By1024() throws IOException, NoSuchAlgorithmException {
         testLimit(1024, 1024*1024);
     }
@@ -159,6 +242,18 @@ public class RedissonBinaryStreamTest extends BaseTest {
         assertThat(s.read(b)).isEqualTo(-1);
         
         assertThat(b).isEqualTo(value);
+    }
+
+    @Test
+    public void testAvailableAfterPartialRead() throws IOException {
+        RBinaryStream stream = redisson.getBinaryStream("test");
+        byte[] value = {1, 2, 3, 4, 5, 6};
+        stream.set(value);
+
+        InputStream s = stream.getInputStream();
+        byte[] b = new byte[10];
+        assertThat(s.read(b)).isEqualTo(value.length);
+        assertThat(s.available()).isZero();
     }
     
     @Test

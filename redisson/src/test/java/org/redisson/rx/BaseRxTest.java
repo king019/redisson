@@ -1,47 +1,25 @@
 package org.redisson.rx;
 
-import java.io.IOException;
-import java.util.Iterator;
-
-import org.junit.AfterClass;
-import org.junit.Before;
-import org.junit.BeforeClass;
-import org.redisson.BaseTest;
-import org.redisson.RedisRunner;
-import org.redisson.Redisson;
+import io.reactivex.rxjava3.core.Completable;
+import io.reactivex.rxjava3.core.Flowable;
+import io.reactivex.rxjava3.core.Maybe;
+import io.reactivex.rxjava3.core.Single;
+import org.junit.jupiter.api.BeforeAll;
+import org.redisson.RedisDockerTest;
 import org.redisson.api.RCollectionRx;
 import org.redisson.api.RScoredSortedSetRx;
 import org.redisson.api.RedissonRxClient;
-import org.redisson.config.Config;
 
-import io.reactivex.Completable;
-import io.reactivex.Flowable;
-import io.reactivex.Maybe;
-import io.reactivex.Single;
+import java.io.IOException;
+import java.util.Iterator;
 
-public abstract class BaseRxTest {
+public abstract class BaseRxTest extends RedisDockerTest {
 
-    protected RedissonRxClient redisson;
-    protected static RedissonRxClient defaultRedisson;
+    protected static RedissonRxClient redisson;
 
-    @BeforeClass
+    @BeforeAll
     public static void beforeClass() throws IOException, InterruptedException {
-        RedisRunner.startDefaultRedisServerInstance();
-        defaultRedisson = createInstance();
-    }
-
-    @AfterClass
-    public static void afterClass() throws IOException, InterruptedException {
-        defaultRedisson.shutdown();
-        RedisRunner.shutDownDefaultRedisServerInstance();
-    }
-
-    @Before
-    public void before() throws IOException, InterruptedException {
-        if (redisson == null) {
-            redisson = defaultRedisson;
-        }
-        sync(redisson.getKeys().flushall());
+        redisson = RedisDockerTest.redisson.rxJava();
     }
 
     public static <V> V sync(Maybe<V> maybe) {
@@ -49,7 +27,7 @@ public abstract class BaseRxTest {
     }
     
     public static void sync(Completable completable) {
-        completable.blockingGet();
+        completable.blockingAwait();
     }
 
     public static <V> V sync(Single<V> single) {
@@ -66,11 +44,6 @@ public abstract class BaseRxTest {
 
     public static <V> Iterator<V> toIterator(Flowable<V> flowable) {
         return flowable.toList().blockingGet().iterator();
-    }
-
-    public static RedissonRxClient createInstance() {
-        Config config = BaseTest.createConfig();
-        return Redisson.createRx(config);
     }
 
 }

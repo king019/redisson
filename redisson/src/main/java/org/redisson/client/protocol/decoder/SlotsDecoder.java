@@ -1,5 +1,5 @@
 /**
- * Copyright (c) 2013-2019 Nikita Koksharov
+ * Copyright (c) 2013-2026 Nikita Koksharov
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -22,6 +22,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 
+import org.redisson.client.codec.Codec;
 import org.redisson.client.codec.StringCodec;
 import org.redisson.client.handler.State;
 import org.redisson.client.protocol.Decoder;
@@ -35,13 +36,13 @@ import org.redisson.cluster.ClusterSlotRange;
 public class SlotsDecoder implements MultiDecoder<Object> {
 
     @Override
-    public Decoder<Object> getDecoder(int paramNum, State state) {
+    public Decoder<Object> getDecoder(Codec codec, int paramNum, State state, long size) {
         return StringCodec.INSTANCE.getValueDecoder();
     }
     
     @Override
     public Object decode(List<Object> parts, State state) {
-        if (parts.size() > 2 && parts.get(0) instanceof List) {
+        if (!parts.isEmpty() && parts.get(0) instanceof List) {
             Map<ClusterSlotRange, Set<String>> result = new HashMap<>();
             List<List<Object>> rows = (List<List<Object>>) (Object) parts;
             for (List<Object> row : rows) {

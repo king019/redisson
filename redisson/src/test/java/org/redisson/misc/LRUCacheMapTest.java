@@ -1,19 +1,17 @@
 package org.redisson.misc;
 
-import static org.assertj.core.api.Assertions.*;
-
-import java.util.concurrent.TimeUnit;
-
-import org.junit.Test;
+import org.junit.jupiter.api.Test;
 import org.redisson.cache.Cache;
 import org.redisson.cache.LRUCacheMap;
+
+import static org.assertj.core.api.Assertions.assertThat;
 
 public class LRUCacheMapTest {
 
     @Test
     public void testMaxIdleTimeEviction() throws InterruptedException {
-        Cache<Integer, Integer> map = new LRUCacheMap<Integer, Integer>(2, 0, 0);
-        map.put(1, 0, 0, TimeUnit.MILLISECONDS, 400, TimeUnit.MILLISECONDS);
+        Cache<Integer, Integer> map = new LRUCacheMap<Integer, Integer>(2, 0, 400);
+        map.put(1, 0);
         assertThat(map.get(1)).isEqualTo(0);
         Thread.sleep(200);
         assertThat(map.get(1)).isEqualTo(0);
@@ -27,8 +25,8 @@ public class LRUCacheMapTest {
 
     @Test
     public void testTTLEviction() throws InterruptedException {
-        Cache<Integer, Integer> map = new LRUCacheMap<Integer, Integer>(2, 0, 0);
-        map.put(1, 0, 500, TimeUnit.MILLISECONDS, 0, TimeUnit.MILLISECONDS);
+        Cache<Integer, Integer> map = new LRUCacheMap<Integer, Integer>(2, 500, 0);
+        map.put(1, 0);
         assertThat(map.get(1)).isEqualTo(0);
         Thread.sleep(100);
         assertThat(map.get(1)).isEqualTo(0);
@@ -78,5 +76,32 @@ public class LRUCacheMapTest {
         
         assertThat(map.keySet()).containsOnly(4, 3);
     }
-    
+    @Test
+    public void testRemoveExpiredEntries() throws InterruptedException {
+        LRUCacheMap<Integer, Integer> map = new LRUCacheMap<>(2, 0, 400);
+        map.put(1, 1);
+        Thread.sleep(100);
+        map.put(2, 2);
+        Thread.sleep(100);
+        assertThat(map.get(1)).isEqualTo(1);
+
+        Thread.sleep(350);
+        //first it will remove the entry which key is 2
+        map.put(3, 3);
+        assertThat(map.get(2)).isNull();
+
+        Thread.sleep(400);
+        //second no entry expired, it will poll the entry which key is 1
+        map.put(4, 4);
+        assertThat(map.get(1)).isNull();
+        Thread.sleep(220);
+        //third it will remove the entry which key is 3
+        map.put(5, 5);
+        assertThat(map.get(3)).isNull();
+        assertThat(map.get(4)).isEqualTo(4);
+        assertThat(map.get(5)).isEqualTo(5);
+
+
+
+    }
 }

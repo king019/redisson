@@ -1,5 +1,5 @@
 /**
- * Copyright (c) 2013-2019 Nikita Koksharov
+ * Copyright (c) 2013-2026 Nikita Koksharov
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -15,11 +15,12 @@
  */
 package org.redisson.api;
 
-import java.util.List;
-
 import org.redisson.api.RScript.Mode;
 import org.redisson.api.RScript.ReturnType;
-import org.redisson.client.codec.Codec;
+
+import java.util.Collection;
+import java.util.List;
+import java.util.function.Function;
 
 /**
  * Async interface for Redis Script feature
@@ -44,17 +45,26 @@ public interface RScriptAsync {
      * @param shaDigest - SHA-1 digest
      * @param returnType - return type
      * @param keys - keys available through KEYS param in script
-     * @param values - values available through VALUES param in script
+     * @param values - values available through ARGV param in script
      * @return result object
      */
     <R> RFuture<R> evalShaAsync(Mode mode, String shaDigest, ReturnType returnType, List<Object> keys, Object... values);
-    
-    /*
-     * Use getScript(Codec) instead
-     */
-    @Deprecated
-    <R> RFuture<R> evalShaAsync(Mode mode, Codec codec, String shaDigest, ReturnType returnType, List<Object> keys, Object... values);
 
+    /**
+     * Executes a Lua script stored in Redis scripts cache by SHA-1 digest <code>shaDigest</code>.
+     * The script is executed over all Redis master or slave nodes in cluster depending on <code>mode</code> value.
+     * <code>resultMapper</code> function reduces all results from Redis nodes into one.
+     *
+     * @param mode - execution mode
+     * @param shaDigest - SHA-1 digest
+     * @param returnType - return type
+     * @param resultMapper - function for reducing multiple results into one
+     * @param values - values available through ARGV param in script
+     * @return result object
+     * @param <R> - type of result
+     */
+    <R> RFuture<R> evalShaAsync(Mode mode, String shaDigest, ReturnType returnType, Function<Collection<R>, R> resultMapper, Object... values);
+    
     /**
      * Executes Lua script stored in Redis scripts cache by SHA-1 digest
      * 
@@ -64,17 +74,11 @@ public interface RScriptAsync {
      * @param shaDigest - SHA-1 digest
      * @param returnType - return type
      * @param keys - keys available through KEYS param in script
-     * @param values - values available through VALUES param in script
+     * @param values - values available through ARGV param in script
      * @return result object
      */
     <R> RFuture<R> evalShaAsync(String key, Mode mode, String shaDigest, ReturnType returnType, List<Object> keys, Object... values);
     
-    /*
-     * Use getScript(Codec) instead
-     */
-    @Deprecated
-    <R> RFuture<R> evalShaAsync(String key, Mode mode, Codec codec, String shaDigest, ReturnType returnType, List<Object> keys, Object... values);
-
     /**
      * Executes Lua script stored in Redis scripts cache by SHA-1 digest
      * 
@@ -85,12 +89,6 @@ public interface RScriptAsync {
      * @return result object
      */
     <R> RFuture<R> evalShaAsync(Mode mode, String shaDigest, ReturnType returnType);
-    
-    /*
-     * Use getScript(Codec) instead
-     */
-    @Deprecated
-    <R> RFuture<R> evalShaAsync(Mode mode, Codec codec, String shaDigest, ReturnType returnType);
 
     /**
      * Executes Lua script
@@ -100,22 +98,25 @@ public interface RScriptAsync {
      * @param luaScript - lua script
      * @param returnType - return type
      * @param keys - keys available through KEYS param in script 
-     * @param values - values available through VALUES param in script
+     * @param values - values available through ARGV param in script
      * @return result object
      */
     <R> RFuture<R> evalAsync(Mode mode, String luaScript, ReturnType returnType, List<Object> keys, Object... values);
-    
-    /*
-     * Use getScript(Codec) instead
-     */
-    @Deprecated
-    <R> RFuture<R> evalAsync(Mode mode, Codec codec, String luaScript, ReturnType returnType, List<Object> keys, Object... values);
 
-    /*
-     * Use getScript(Codec) instead
+    /**
+     * Executes a Lua script.
+     * The script is executed over all Redis master or slave nodes in cluster depending on <code>mode</code> value.
+     * <code>resultMapper</code> function reduces all results from Redis nodes into one.
+     *
+     * @param mode - execution mode
+     * @param luaScript - lua script
+     * @param returnType - return type
+     * @param resultMapper - function for reducing multiple results into one
+     * @param values - values available through ARGV param in script
+     * @return result object
+     * @param <R> - type of result
      */
-    @Deprecated
-    <R> RFuture<R> evalAsync(String key, Mode mode, Codec codec, String luaScript, ReturnType returnType, List<Object> keys, Object... values);
+    <R> RFuture<R> evalAsync(Mode mode, String luaScript, ReturnType returnType, Function<Collection<R>, R> resultMapper, Object... values);
 
     /**
      * Executes Lua script
@@ -126,7 +127,7 @@ public interface RScriptAsync {
      * @param luaScript - lua script
      * @param returnType - return type
      * @param keys - keys available through KEYS param in script
-     * @param values - values available through VALUES param in script
+     * @param values - values available through ARGV param in script
      * @return result object
      */
     <R> RFuture<R> evalAsync(String key, Mode mode, String luaScript, ReturnType returnType, List<Object> keys, Object... values);
@@ -141,12 +142,6 @@ public interface RScriptAsync {
      * @return result object
      */
     <R> RFuture<R> evalAsync(Mode mode, String luaScript, ReturnType returnType);
-
-    /*
-     * Use getScript(Codec) instead
-     */
-    @Deprecated
-    <R> RFuture<R> evalAsync(Mode mode, Codec codec, String luaScript, ReturnType returnType);
 
     /**
      * Loads Lua script into Redis scripts cache and returns its SHA-1 digest

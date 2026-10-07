@@ -1,5 +1,5 @@
 /**
- * Copyright (c) 2013-2019 Nikita Koksharov
+ * Copyright (c) 2013-2026 Nikita Koksharov
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -15,9 +15,7 @@
  */
 package org.redisson.client;
 
-import java.net.URI;
-
-import org.redisson.misc.URIBuilder;
+import org.redisson.misc.RedisURI;
 
 /**
  * 
@@ -28,19 +26,24 @@ public class RedisRedirectException extends RedisException {
 
     private static final long serialVersionUID = 181505625075250011L;
 
-    private final int slot;
-    private final URI url;
+    private final Integer slot;
+    private final RedisURI url;
 
-    public RedisRedirectException(int slot, String url) {
-        this.slot = slot;
-        this.url = URIBuilder.create("redis://" + url);
+    public RedisRedirectException(RedisURI url) {
+        slot = null;
+        this.url = url;
     }
 
-    public int getSlot() {
+    public RedisRedirectException(Integer slot, RedisURI url) {
+        this.slot = slot;
+        this.url = url;
+    }
+
+    public Integer getSlot() {
         return slot;
     }
 
-    public URI getUrl() {
+    public RedisURI getUrl() {
         return url;
     }
 

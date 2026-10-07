@@ -1,5 +1,5 @@
 /**
- * Copyright (c) 2013-2019 Nikita Koksharov
+ * Copyright (c) 2013-2026 Nikita Koksharov
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -15,10 +15,11 @@
  */
 package org.redisson.api;
 
+import org.redisson.api.mapreduce.RCollectionMapReduce;
+
+import java.util.Iterator;
 import java.util.List;
 import java.util.RandomAccess;
-
-import org.redisson.api.mapreduce.RCollectionMapReduce;
 
 /**
  * Distributed and concurrent implementation of {@link java.util.List}
@@ -35,8 +36,27 @@ public interface RList<V> extends List<V>, RExpirable, RListAsync<V>, RSortable<
      * @param indexes of elements
      * @return list of elements
      */
-    List<V> get(int...indexes);
-    
+    List<V> get(int... indexes);
+
+    /**
+     * Returns element iterator that can be shared across multiple applications.
+     * Creating multiple iterators on the same object with this method will result in a single shared iterator.
+     * See {@linkplain RList#distributedIterator(String, int)} for creating different iterators.
+     * @param count batch size
+     * @return shared elements iterator
+     */
+    Iterator<V> distributedIterator(int count);
+
+    /**
+     * Returns iterator over elements that match specified pattern. Iterator can be shared across multiple applications.
+     * Creating multiple iterators on the same object with this method will result in a single shared iterator.
+     * Iterator name must be resolved to the same hash slot as list name.
+     * @param count batch size
+     * @param iteratorName redis object name to which cursor will be saved
+     * @return shared elements iterator
+     */
+    Iterator<V> distributedIterator(String iteratorName, int count);
+
     /**
      * Returns <code>RMapReduce</code> object associated with this map
      * 
@@ -93,6 +113,25 @@ public interface RList<V> extends List<V>, RExpirable, RListAsync<V>, RSortable<
     void trim(int fromIndex, int toIndex);
 
     /**
+     * Returns range of values from 0 index to <code>toIndex</code>. Indexes are zero based. 
+     * <code>-1</code> means the last element, <code>-2</code> means penultimate and so on.
+     * 
+     * @param toIndex - end index
+     * @return elements
+     */
+    List<V> range(int toIndex);
+    
+    /**
+     * Returns range of values from <code>fromIndex</code> to <code>toIndex</code> index including.
+     * Indexes are zero based. <code>-1</code> means the last element, <code>-2</code> means penultimate and so on.
+     * 
+     * @param fromIndex - start index
+     * @param toIndex - end index
+     * @return elements
+     */
+    List<V> range(int fromIndex, int toIndex);
+    
+    /**
      * Remove object by specified index
      * 
      * @param index - index of object
@@ -108,5 +147,21 @@ public interface RList<V> extends List<V>, RExpirable, RListAsync<V>, RSortable<
      *      or {@code false} if element isn't found
      */
     boolean remove(Object element, int count);
-    
+
+    /**
+     * Adds object event listener
+     *
+     * @see org.redisson.api.listener.TrackingListener
+     * @see org.redisson.api.ExpiredObjectListener
+     * @see org.redisson.api.DeletedObjectListener
+     * @see org.redisson.api.listener.ListAddListener
+     * @see org.redisson.api.listener.ListInsertListener
+     * @see org.redisson.api.listener.ListSetListener
+     * @see org.redisson.api.listener.ListRemoveListener
+     * @see org.redisson.api.listener.ListTrimListener
+     *
+     * @param listener - object event listener
+     * @return listener id
+     */
+    int addListener(ObjectListener listener);
 }

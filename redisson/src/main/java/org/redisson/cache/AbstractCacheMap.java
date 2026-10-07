@@ -1,5 +1,5 @@
 /**
- * Copyright (c) 2013-2019 Nikita Koksharov
+ * Copyright (c) 2013-2026 Nikita Koksharov
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -15,20 +15,20 @@
  */
 package org.redisson.cache;
 
-import java.util.AbstractCollection;
+import java.util.*;
 import java.util.AbstractMap.SimpleEntry;
-import java.util.AbstractSet;
-import java.util.Collection;
-import java.util.Iterator;
-import java.util.Map;
-import java.util.NoSuchElementException;
-import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentMap;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicLong;
+import java.util.concurrent.atomic.AtomicReference;
+import java.util.function.BiFunction;
+import java.util.function.Consumer;
+import java.util.function.Function;
 
 /**
- * 
+ *
  * @author Nikita Koksharov
  *
  * @param <K> key
@@ -40,7 +40,12 @@ public abstract class AbstractCacheMap<K, V> implements Cache<K, V> {
     final ConcurrentMap<K, CachedValue<K, V>> map = new ConcurrentHashMap<>();
     private final long timeToLiveInMillis;
     private final long maxIdleInMillis;
+    private Consumer<CachedValue<K, V>> removalListener;
 
+    /**
+     * the least expire time of entry in the map
+     */
+    private final AtomicLong leastExpireTime =  new AtomicLong(0L);
 
     public AbstractCacheMap(int size, long timeToLiveInMillis, long maxIdleInMillis) {
         if (size < 0) {
@@ -52,14 +57,19 @@ public abstract class AbstractCacheMap<K, V> implements Cache<K, V> {
     }
 
     protected void onValueRead(CachedValue<K, V> value) {
-        
-    }
-    
-    protected void onValueRemove(CachedValue<K, V> value) {
-        
+
     }
 
-    
+    protected void onValueRemove(CachedValue<K, V> value) {
+        if (removalListener != null) {
+            removalListener.accept(value);
+        }
+    }
+
+    public final void removalListener(Consumer<CachedValue<K, V>> removalListener) {
+        this.removalListener = removalListener;
+    }
+
     /*
      * (non-Javadoc)
      * @see java.util.Map#size()
@@ -87,7 +97,7 @@ public abstract class AbstractCacheMap<K, V> implements Cache<K, V> {
         if (key == null) {
             throw new NullPointerException();
         }
-        
+
         CachedValue<K, V> entry = map.get(key);
         if (entry == null) {
             return false;
@@ -149,7 +159,7 @@ public abstract class AbstractCacheMap<K, V> implements Cache<K, V> {
         if (key == null) {
             throw new NullPointerException();
         }
-        
+
         CachedValue<K, V> entry = map.get(key);
         if (entry == null) {
             return null;
@@ -168,7 +178,7 @@ public abstract class AbstractCacheMap<K, V> implements Cache<K, V> {
         onValueRead(entry);
         return (V) entry.getValue();
     }
-    
+
     /*
      * (non-Javadoc)
      * @see java.util.Map#put(java.lang.Object, java.lang.Object)
@@ -177,9 +187,8 @@ public abstract class AbstractCacheMap<K, V> implements Cache<K, V> {
     public V put(K key, V value) {
         return put(key, value, timeToLiveInMillis, TimeUnit.MILLISECONDS, maxIdleInMillis, TimeUnit.MILLISECONDS);
     }
-    
-    @Override
-    public V put(K key, V value, long ttl, TimeUnit ttlUnit, long maxIdleTime, TimeUnit maxIdleUnit) {
+
+    private V put(K key, V value, long ttl, TimeUnit ttlUnit, long maxIdleTime, TimeUnit maxIdleUnit) {
         CachedValue<K, V> entry = create(key, value, ttlUnit.toMillis(ttl), maxIdleUnit.toMillis(maxIdleTime));
         if (isFull(key)) {
             if (!removeExpiredEntries()) {
@@ -200,22 +209,44 @@ public abstract class AbstractCacheMap<K, V> implements Cache<K, V> {
     protected CachedValue<K, V> create(K key, V value, long ttl, long maxIdleTime) {
         return new StdCachedValue<K, V>(key, value, ttl, maxIdleTime);
     }
-    
+
     protected void onValueCreate(CachedValue<K, V> entry) {
     }
 
     protected boolean removeExpiredEntries() {
+        if (timeToLiveInMillis == 0 && maxIdleInMillis == 0) {
+            return false;
+        }
+        if (this.leastExpireTime.get() > System.currentTimeMillis()) {
+            return false;
+        }
+        long newLeastExpireTime = Long.MAX_VALUE;
         boolean removed = false;
         // TODO optimize
         for (CachedValue<K, V> value : map.values()) {
             if (isValueExpired(value)) {
                 if (map.remove(value.getKey(), value)) {
-                    onValueRemove(value);                    
+                    onValueRemove(value);
                     removed = true;
                 }
+            } else {
+                newLeastExpireTime = Math.min(newLeastExpireTime, value.getExpireTime());
             }
         }
+        updateLeastExpireTime(newLeastExpireTime);
         return removed;
+    }
+    private void updateLeastExpireTime(long newLeastExpireTime) {
+       for (;;){
+           long currentLeastExpireTime = leastExpireTime.get();
+           if (newLeastExpireTime <= currentLeastExpireTime) {
+               break;
+           }
+           if (leastExpireTime.compareAndSet(currentLeastExpireTime, newLeastExpireTime)) {
+               break;
+           }
+
+       }
     }
 
     protected abstract void onMapFull();
@@ -229,7 +260,7 @@ public abstract class AbstractCacheMap<K, V> implements Cache<K, V> {
         }
         return false;
     }
-    
+
     /*
      * (non-Javadoc)
      * @see java.util.Map#remove(java.lang.Object)
@@ -245,7 +276,7 @@ public abstract class AbstractCacheMap<K, V> implements Cache<K, V> {
         }
         return null;
     }
-    
+
     /*
      * (non-Javadoc)
      * @see java.util.Map#putAll(java.util.Map)
@@ -296,13 +327,37 @@ public abstract class AbstractCacheMap<K, V> implements Cache<K, V> {
         removeExpiredEntries();
         return new EntrySet();
     }
-    
+
     abstract class MapIterator<M> implements Iterator<M> {
 
         private final Iterator<Map.Entry<K, CachedValue<K, V>>> keyIterator = map.entrySet().iterator();
-        
+
         Map.Entry<K, CachedValue<K, V>> mapEntry;
-        
+
+        private Map.Entry<K, CachedValue<K, V>> lastReturned;
+
+        final Map.Entry<K, CachedValue<K, V>> nextEntry() {
+            // hasNext() is what advances the cursor, so call it when next() is used alone
+            if (mapEntry == null && !hasNext()) {
+                throw new NoSuchElementException();
+            }
+            lastReturned = mapEntry;
+            mapEntry = null;
+            return lastReturned;
+        }
+
+        @Override
+        public void remove() {
+            if (lastReturned == null) {
+                throw new IllegalStateException();
+            }
+            CachedValue<K, V> value = lastReturned.getValue();
+            if (map.remove(lastReturned.getKey(), value)) {
+                onValueRemove(value);
+            }
+            lastReturned = null;
+        }
+
         @Override
         public boolean hasNext() {
             if (mapEntry != null) {
@@ -312,7 +367,7 @@ public abstract class AbstractCacheMap<K, V> implements Cache<K, V> {
             while (keyIterator.hasNext()) {
                 Map.Entry<K, CachedValue<K, V>> entry = keyIterator.next();
                 if (isValueExpired(entry.getValue())) {
-                    continue; 
+                    continue;
                 }
                 mapEntry = entry;
                 break;
@@ -320,6 +375,12 @@ public abstract class AbstractCacheMap<K, V> implements Cache<K, V> {
             return mapEntry != null;
         }
 
+        public CachedValue<K, V> cursorValue() {
+            if (mapEntry == null) {
+                throw new IllegalStateException();
+            }
+            return mapEntry.getValue();
+        }
     }
 
     final class KeySet extends AbstractSet<K> {
@@ -329,22 +390,7 @@ public abstract class AbstractCacheMap<K, V> implements Cache<K, V> {
             return new MapIterator<K>() {
                 @Override
                 public K next() {
-                    if (mapEntry == null) {
-                        throw new NoSuchElementException();
-                    }
-                    
-                    K key = mapEntry.getKey();
-                    mapEntry = null;
-                    return key;
-                }
-
-                @Override
-                public void remove() {
-                    if (mapEntry == null) {
-                        throw new IllegalStateException();
-                    }
-                    map.remove(mapEntry.getKey());
-                    mapEntry = null;
+                    return nextEntry().getKey();
                 }
             };
         }
@@ -378,22 +424,7 @@ public abstract class AbstractCacheMap<K, V> implements Cache<K, V> {
             return new MapIterator<V>() {
                 @Override
                 public V next() {
-                    if (mapEntry == null) {
-                        throw new NoSuchElementException();
-                    }
-                    
-                    V value = readValue(mapEntry.getValue());
-                    mapEntry = null;
-                    return value;
-                }
-
-                @Override
-                public void remove() {
-                    if (mapEntry == null) {
-                        throw new IllegalStateException();
-                    }
-                    map.remove(mapEntry.getKey(), mapEntry.getValue());
-                    mapEntry = null;
+                    return readValue(nextEntry().getValue());
                 }
             };
         }
@@ -421,22 +452,8 @@ public abstract class AbstractCacheMap<K, V> implements Cache<K, V> {
             return new MapIterator<Map.Entry<K, V>>() {
                 @Override
                 public Map.Entry<K, V> next() {
-                    if (mapEntry == null) {
-                        throw new NoSuchElementException();
-                    }
-                    
-                    SimpleEntry<K, V> result = new SimpleEntry<K, V>(mapEntry.getKey(), readValue(mapEntry.getValue()));
-                    mapEntry = null;
-                    return result;
-                }
-
-                @Override
-                public void remove() {
-                    if (mapEntry == null) {
-                        throw new IllegalStateException();
-                    }
-                    map.remove(mapEntry.getKey(), mapEntry.getValue());
-                    mapEntry = null;
+                    Map.Entry<K, CachedValue<K, V>> entry = nextEntry();
+                    return new SimpleEntry<K, V>(entry.getKey(), readValue(entry.getValue()));
                 }
             };
         }
@@ -445,17 +462,14 @@ public abstract class AbstractCacheMap<K, V> implements Cache<K, V> {
             if (!(o instanceof Map.Entry))
                 return false;
             Map.Entry<?, ?> e = (Map.Entry<?, ?>) o;
-            Object key = e.getKey();
-            V value = get(key);
-            return value != null && value.equals(e);
+            V value = get(e.getKey());
+            return value != null && value.equals(e.getValue());
         }
 
         public boolean remove(Object o) {
             if (o instanceof Map.Entry) {
                 Map.Entry<?, ?> e = (Map.Entry<?, ?>) o;
-                Object key = e.getKey();
-                Object value = e.getValue();
-                return AbstractCacheMap.this.map.remove(key, value);
+                return AbstractCacheMap.this.remove(e.getKey(), e.getValue());
             }
             return false;
         }
@@ -468,6 +482,118 @@ public abstract class AbstractCacheMap<K, V> implements Cache<K, V> {
             AbstractCacheMap.this.clear();
         }
 
+    }
+
+    @Override
+    public V putIfAbsent(K key, V value) {
+        CachedValue<K, V> entry = create(key, value, timeToLiveInMillis, maxIdleInMillis);
+        CachedValue<K, V> prevCachedValue = map.putIfAbsent(key, entry);
+        if (prevCachedValue != null) {
+            return prevCachedValue.getValue();
+        }
+
+        if (isFull(key)) {
+            if (!removeExpiredEntries()) {
+                onMapFull();
+            }
+        }
+        onValueCreate(entry);
+        return null;
+    }
+
+    @Override
+    public boolean remove(Object key, Object value) {
+        AtomicBoolean result = new AtomicBoolean();
+        map.computeIfPresent((K) key, (k, entry) -> {
+            if (entry.getValue().equals(value)
+                    && !isValueExpired(entry)) {
+                onValueRemove(entry);
+                result.set(true);
+                return null;
+            }
+            return entry;
+        });
+        return result.get();
+    }
+
+    @Override
+    public boolean replace(K key, V oldValue, V newValue) {
+        AtomicBoolean result = new AtomicBoolean();
+        map.computeIfPresent(key, (k, entry) -> {
+            if (entry.getValue().equals(oldValue)
+                    && !isValueExpired(entry)) {
+                onValueRemove(entry);
+                result.set(true);
+                CachedValue<K, V> newEntry = create(key, newValue, timeToLiveInMillis, maxIdleInMillis);
+                onValueCreate(newEntry);
+                return newEntry;
+            }
+            return entry;
+        });
+        return result.get();
+    }
+
+    @Override
+    public V replace(K key, V value) {
+        AtomicReference<V> result = new AtomicReference<>();
+        map.computeIfPresent(key, (k, entry) -> {
+            if (!isValueExpired(entry)) {
+                onValueRemove(entry);
+                result.set(entry.getValue());
+                CachedValue<K, V> newEntry = create(key, value, timeToLiveInMillis, maxIdleInMillis);
+                onValueCreate(newEntry);
+                return newEntry;
+            }
+            return entry;
+        });
+        return result.get();
+    }
+
+    @Override
+    public V computeIfAbsent(K key, Function<? super K, ? extends V> mappingFunction) {
+        if (isFull(key)) {
+            if (!removeExpiredEntries()) {
+                onMapFull();
+            }
+        }
+
+        CachedValue<K, V> v = map.computeIfAbsent(key, k -> {
+            V value = mappingFunction.apply(k);
+            if (value == null) {
+                return null;
+            }
+            CachedValue<K, V> entry = create(key, value, timeToLiveInMillis, maxIdleInMillis);
+            onValueCreate(entry);
+            return entry;
+        });
+        if (v != null) {
+            return v.getValue();
+        }
+        return null;
+    }
+
+    @Override
+    public V computeIfPresent(K key, BiFunction<? super K, ? super V, ? extends V> remappingFunction) {
+        CachedValue<K, V> v = map.computeIfPresent(key, (k, e) -> {
+            if (isValueExpired(e)) {
+                onValueRemove(e);
+                return null;
+            }
+            V value = remappingFunction.apply(k, e.getValue());
+            // every path below drops `e` from the map, so it must always be retired -
+            // otherwise it is orphaned in the subclass's eviction bookkeeping
+            onValueRemove(e);
+            if (value == null) {
+                return null;
+            }
+            CachedValue<K, V> entry = create(key, value, timeToLiveInMillis, maxIdleInMillis);
+            onValueCreate(entry);
+            return entry;
+        });
+        if (v != null) {
+            return v.getValue();
+        }
+        return null;
     }
 
 }

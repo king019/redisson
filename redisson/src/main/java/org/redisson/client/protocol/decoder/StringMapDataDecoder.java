@@ -1,5 +1,5 @@
 /**
- * Copyright (c) 2013-2019 Nikita Koksharov
+ * Copyright (c) 2013-2026 Nikita Koksharov
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,12 +16,13 @@
 package org.redisson.client.protocol.decoder;
 
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 
+import org.redisson.client.codec.Codec;
 import org.redisson.client.handler.State;
 import org.redisson.client.protocol.Decoder;
 
-import io.netty.buffer.ByteBuf;
 import io.netty.util.CharsetUtil;
 
 /**
@@ -29,10 +30,9 @@ import io.netty.util.CharsetUtil;
  * @author Nikita Koksharov
  *
  */
-public class StringMapDataDecoder implements Decoder<Map<String, String>> {
+public class StringMapDataDecoder implements MultiDecoder<Map<String, String>> {
 
-    @Override
-    public Map<String, String> decode(ByteBuf buf, State state) {
+    private final Decoder decoder = (buf, state) -> {
         String value = buf.toString(CharsetUtil.UTF_8);
         Map<String, String> result = new HashMap<String, String>();
         for (String entry : value.split("\r\n|\n")) {
@@ -42,6 +42,15 @@ public class StringMapDataDecoder implements Decoder<Map<String, String>> {
             }
         }
         return result;
+    };
+
+    @Override
+    public Decoder<Object> getDecoder(Codec codec, int paramNum, State state, long size) {
+        return decoder;
     }
 
+    @Override
+    public Map<String, String> decode(List<Object> parts, State state) {
+        return null;
+    }
 }

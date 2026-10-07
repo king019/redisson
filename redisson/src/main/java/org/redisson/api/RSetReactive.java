@@ -1,5 +1,5 @@
 /**
- * Copyright (c) 2013-2019 Nikita Koksharov
+ * Copyright (c) 2013-2026 Nikita Koksharov
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -15,19 +15,39 @@
  */
 package org.redisson.api;
 
-import java.util.Set;
-
+import org.redisson.api.annotation.EmptyAsAbsent;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 
+import java.util.Collection;
+import java.util.Set;
+
 /**
- * Reactive interface for RSet object
+ * Reactive interface for Redis based implementation of {@link java.util.Set}
  *
  * @author Nikita Koksharov
  *
- * @param <V> value
+ * @param <V> type of value
  */
 public interface RSetReactive<V> extends RCollectionReactive<V>, RSortableReactive<Set<V>> {
+
+    /**
+     * Adds all elements contained in the specified collection.
+     * Returns number of added elements.
+     *
+     * @param c - collection of elements to add
+     * @return number of added elements
+     */
+    Mono<Integer> addAllCounted(Collection<? extends V> c);
+
+    /**
+     * Removes all elements contained in the specified collection.
+     * Returns number of removed elements.
+     *
+     * @param c - collection of elements to add
+     * @return number of removed elements
+     */
+    Mono<Integer> removeAllCounted(Collection<? extends V> c);
 
     /**
      * Returns <code>RPermitExpirableSemaphore</code> instance associated with <code>value</code>
@@ -70,8 +90,8 @@ public interface RSetReactive<V> extends RCollectionReactive<V>, RSortableReacti
     RLockReactive getLock(V value);
     
     /**
-     * Returns an iterator over elements in this set.
-     * Elements are loaded in batch. Batch size is defined by <code>count</code> param. 
+     * Returns elements iterator fetches elements in a batch.
+     * Batch size is defined by <code>count</code> param.
      * 
      * @param count - size of elements batch
      * @return iterator
@@ -79,8 +99,8 @@ public interface RSetReactive<V> extends RCollectionReactive<V>, RSortableReacti
     Flux<V> iterator(int count);
     
     /**
-     * Returns an iterator over elements in this set.
-     * Elements are loaded in batch. Batch size is defined by <code>count</code> param.
+     * Returns elements iterator fetches elements in a batch.
+     * Batch size is defined by <code>count</code> param.
      * If pattern is not null then only elements match this pattern are loaded.
      * 
      * @param pattern - search pattern
@@ -90,7 +110,8 @@ public interface RSetReactive<V> extends RCollectionReactive<V>, RSortableReacti
     Flux<V> iterator(String pattern, int count);
     
     /**
-     * Returns iterator over elements in this set matches <code>pattern</code>. 
+     * Returns elements iterator.
+     * If <code>pattern</code> is not null then only elements match this pattern are loaded.
      * 
      * @param pattern - search pattern
      * @return iterator
@@ -98,29 +119,36 @@ public interface RSetReactive<V> extends RCollectionReactive<V>, RSortableReacti
     Flux<V> iterator(String pattern);
     
     /**
-     * Removes and returns random elements from set
-     * in async mode
-     * 
-     * @param amount of random values
-     * @return random values
+     * Removes and returns random elements limited by <code>amount</code>
+     *
+     * @param amount of random elements
+     * @return random elements
      */
+    @EmptyAsAbsent
     Mono<Set<V>> removeRandom(int amount);
     
     /**
-     * Removes and returns random element from set
-     * in async mode
+     * Removes and returns random element
      *
-     * @return value
+     * @return random element
      */
     Mono<V> removeRandom();
 
     /**
-     * Returns random element from set
-     * in async mode
+     * Returns random element
      *
-     * @return value
+     * @return random element
      */
     Mono<V> random();
+
+    /**
+     * Returns random elements from set limited by <code>count</code>
+     *
+     * @param count - values amount to return
+     * @return random elements
+     */
+    @EmptyAsAbsent
+    Mono<Set<V>> random(int count);
 
     /**
      * Move a member from this set to the given destination set in async mode.
@@ -137,6 +165,7 @@ public interface RSetReactive<V> extends RCollectionReactive<V>, RSortableReacti
      *
      * @return values
      */
+    @EmptyAsAbsent
     Mono<Set<V>> readAll();
     
     /**
@@ -146,7 +175,7 @@ public interface RSetReactive<V> extends RCollectionReactive<V>, RSortableReacti
      * @param names - name of sets
      * @return size of union
      */
-    Mono<Long> union(String... names);
+    Mono<Integer> union(String... names);
 
     /**
      * Union sets specified by name with current set.
@@ -155,7 +184,54 @@ public interface RSetReactive<V> extends RCollectionReactive<V>, RSortableReacti
      * @param names - name of sets
      * @return size of union
      */
+    @EmptyAsAbsent
     Mono<Set<V>> readUnion(String... names);
+
+    /**
+     * Counts elements of set as a result of sets union with current set.
+     * <p>
+     * Requires <b>Redis 8.10.0 and higher.</b>
+     *
+     * @param names - name of sets
+     * @return amount of elements
+     */
+    Mono<Integer> countUnion(String... names);
+
+    /**
+     * Counts elements of set as a result of sets union with current set.
+     * <p>
+     * Requires <b>Redis 8.10.0 and higher.</b>
+     *
+     * @param names - name of sets
+     * @param limit - sets union limit
+     * @return amount of elements
+     */
+    Mono<Integer> countUnion(int limit, String... names);
+
+    /**
+     * Counts elements of set as a result of sets union with current set.
+     * Returns an approximate value computed through HyperLogLog with
+     * 0.81% standard error instead of an exact one.
+     * <p>
+     * Requires <b>Redis 8.10.0 and higher.</b>
+     *
+     * @param names - name of sets
+     * @return approximate amount of elements
+     */
+    Mono<Integer> countUnionApprox(String... names);
+
+    /**
+     * Counts elements of set as a result of sets union with current set.
+     * Returns an approximate value computed through HyperLogLog with
+     * 0.81% standard error instead of an exact one.
+     * <p>
+     * Requires <b>Redis 8.10.0 and higher.</b>
+     *
+     * @param names - name of sets
+     * @param limit - sets union limit
+     * @return approximate amount of elements
+     */
+    Mono<Integer> countUnionApprox(int limit, String... names);
     
     /**
      * Diff sets specified by name and write to current set.
@@ -164,7 +240,7 @@ public interface RSetReactive<V> extends RCollectionReactive<V>, RSortableReacti
      * @param names - name of sets
      * @return size of diff
      */
-    Mono<Long> diff(String... names);
+    Mono<Integer> diff(String... names);
     
     /**
      * Diff sets specified by name with current set.
@@ -173,7 +249,29 @@ public interface RSetReactive<V> extends RCollectionReactive<V>, RSortableReacti
      * @param names - name of sets
      * @return values
      */
+    @EmptyAsAbsent
     Mono<Set<V>> readDiff(String... names);
+
+    /**
+     * Counts elements of set as a result of sets difference with current set.
+     * <p>
+     * Requires <b>Redis 8.10.0 and higher.</b>
+     *
+     * @param names - name of sets
+     * @return amount of elements
+     */
+    Mono<Integer> countDiff(String... names);
+
+    /**
+     * Counts elements of set as a result of sets difference with current set.
+     * <p>
+     * Requires <b>Redis 8.10.0 and higher.</b>
+     *
+     * @param names - name of sets
+     * @param limit - sets difference limit
+     * @return amount of elements
+     */
+    Mono<Integer> countDiff(int limit, String... names);
     
     /**
      * Intersection sets specified by name and write to current set.
@@ -182,7 +280,28 @@ public interface RSetReactive<V> extends RCollectionReactive<V>, RSortableReacti
      * @param names - name of sets
      * @return size of intersection
      */
-    Mono<Long> intersection(String... names);
+    Mono<Integer> intersection(String... names);
+
+    /**
+     * Counts elements of set as a result of sets intersection with current set.
+     * <p>
+     * Requires <b>Redis 7.0.0 and higher.</b>
+     *
+     * @param names - name of sets
+     * @return amount of elements
+     */
+    Mono<Integer> countIntersection(String... names);
+
+    /**
+     * Counts elements of set as a result of sets intersection with current set.
+     * <p>
+     * Requires <b>Redis 7.0.0 and higher.</b>
+     *
+     * @param names - name of sets
+     * @param limit - sets intersection limit
+     * @return amount of elements
+     */
+    Mono<Integer> countIntersection(int limit, String... names);
 
     /**
      * Intersection sets specified by name with current set.
@@ -191,6 +310,43 @@ public interface RSetReactive<V> extends RCollectionReactive<V>, RSortableReacti
      * @param names - name of sets
      * @return values
      */
+    @EmptyAsAbsent
     Mono<Set<V>> readIntersection(String... names);
+
+    /**
+     * Tries to add elements only if none of them in set.
+     *
+     * @param values - values to add
+     * @return <code>true</code> if elements successfully added,
+     *          otherwise <code>false</code>.
+     */
+    Mono<Boolean> tryAdd(V... values);
+
+    /**
+     * Check if each element is contained in the specified collection.
+     * Returns contained elements.
+     * <p>
+     * Requires <b>Redis 6.2.0 and higher.</b>
+     *
+     * @param c - collection to check
+     * @return contained elements
+     */
+    @EmptyAsAbsent
+    Mono<Set<V>> containsEach(Collection<V> c);
+
+    /**
+     * Adds object event listener
+     *
+     * @see org.redisson.api.listener.TrackingListener
+     * @see org.redisson.api.listener.SetAddListener
+     * @see org.redisson.api.listener.SetRemoveListener
+     * @see org.redisson.api.listener.SetRemoveRandomListener
+     * @see org.redisson.api.ExpiredObjectListener
+     * @see org.redisson.api.DeletedObjectListener
+     *
+     * @param listener - object event listener
+     * @return listener id
+     */
+    Mono<Integer> addListener(ObjectListener listener);
 
 }

@@ -1,5 +1,5 @@
 /**
- * Copyright (c) 2013-2019 Nikita Koksharov
+ * Copyright (c) 2013-2026 Nikita Koksharov
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -15,10 +15,11 @@
  */
 package org.redisson.eviction;
 
-import org.redisson.api.RFuture;
 import org.redisson.client.codec.LongCodec;
 import org.redisson.client.protocol.RedisCommands;
 import org.redisson.command.CommandAsyncExecutor;
+
+import java.util.concurrent.CompletionStage;
 
 /**
  * 
@@ -37,7 +38,12 @@ public class ScoredSetEvictionTask extends EvictionTask {
     }
 
     @Override
-    RFuture<Integer> execute() {
+    String getName() {
+        return name;
+    }
+    
+    @Override
+    CompletionStage<Integer> execute() {
         return executor.writeAsync(name, LongCodec.INSTANCE, RedisCommands.ZREMRANGEBYSCORE, name, 0, System.currentTimeMillis() - shiftInMilliseconds);
     }
     

@@ -1,5 +1,5 @@
 /**
- * Copyright (c) 2013-2019 Nikita Koksharov
+ * Copyright (c) 2013-2026 Nikita Koksharov
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -15,27 +15,38 @@
  */
 package org.redisson.api;
 
-import java.util.List;
-
-import org.redisson.client.codec.Codec;
 import org.redisson.client.protocol.RedisCommand;
 import org.redisson.client.protocol.RedisCommands;
 
+import java.util.Collection;
+import java.util.List;
+import java.util.function.Function;
+
 /**
- * Interface for Redis Script feature
+ * API for Redis Lua scripts execution.
  * 
  * @author Nikita Koksharov
  *
  */
 public interface RScript extends RScriptAsync {
 
-    enum Mode {READ_ONLY, READ_WRITE}
+    enum Mode {
+        /**
+         * Execute script as read operation
+         */
+        READ_ONLY,
+
+        /**
+         * Execute script as write operation
+         */
+        READ_WRITE
+    }
 
     enum ReturnType {
         BOOLEAN(RedisCommands.EVAL_BOOLEAN_SAFE),
-        INTEGER(RedisCommands.EVAL_LONG),
-        MULTI(RedisCommands.EVAL_LIST),
-        STATUS(RedisCommands.EVAL_STRING),
+        LONG(RedisCommands.EVAL_LONG),
+        LIST(RedisCommands.EVAL_LIST),
+        STRING(RedisCommands.EVAL_STRING),
         VALUE(RedisCommands.EVAL_OBJECT),
         MAPVALUE(RedisCommands.EVAL_MAP_VALUE),
         MAPVALUELIST(RedisCommands.EVAL_MAP_VALUE_LIST);
@@ -60,10 +71,25 @@ public interface RScript extends RScriptAsync {
      * @param shaDigest - SHA-1 digest
      * @param returnType - return type
      * @param keys - keys available through KEYS param in script
-     * @param values - values available through VALUES param in script
+     * @param values - values available through ARGV param in script
      * @return result object
      */
     <R> R evalSha(Mode mode, String shaDigest, ReturnType returnType, List<Object> keys, Object... values);
+
+    /**
+     * Executes a Lua script stored in Redis scripts cache by SHA-1 digest <code>shaDigest</code>.
+     * The script is executed over all Redis master or slave nodes in cluster depending on <code>mode</code> value.
+     * <code>resultMapper</code> function reduces all results from Redis nodes into one.
+     *
+     * @param mode - execution mode
+     * @param shaDigest - SHA-1 digest
+     * @param returnType - return type
+     * @param resultMapper - function for reducing multiple results into one
+     * @param values - values available through ARGV param in script
+     * @return result object
+     * @param <R> - type of result
+     */
+    <R> R evalSha(Mode mode, String shaDigest, ReturnType returnType, Function<Collection<R>, R> resultMapper, Object... values);
 
     /**
      * Executes Lua script stored in Redis scripts cache by SHA-1 digest
@@ -74,17 +100,11 @@ public interface RScript extends RScriptAsync {
      * @param shaDigest - SHA-1 digest
      * @param returnType - return type
      * @param keys - keys available through KEYS param in script
-     * @param values - values available through VALUES param in script
+     * @param values - values available through ARGV param in script
      * @return result object
      */
     <R> R evalSha(String key, Mode mode, String shaDigest, ReturnType returnType, List<Object> keys, Object... values);
     
-    /*
-     * Use getScript(Codec) instead
-     */
-    @Deprecated
-    <R> R evalSha(Mode mode, Codec codec, String shaDigest, ReturnType returnType, List<Object> keys, Object... values);
-
     /**
      * Executes Lua script stored in Redis scripts cache by SHA-1 digest
      * 
@@ -96,26 +116,35 @@ public interface RScript extends RScriptAsync {
      */
     <R> R evalSha(Mode mode, String shaDigest, ReturnType returnType);
 
-    /*
-     * Use getScript(Codec) instead
-     */
-    @Deprecated
-    <R> R evalSha(Mode mode, Codec codec, String shaDigest, ReturnType returnType);
-
     /**
      * Executes Lua script
      * 
-     * @param <R> - type of result
-     * @param key - used to locate Redis node in Cluster which stores cached Lua script 
+     * @param key - used to locate Redis node in Cluster which stores cached Lua script
      * @param mode - execution mode
      * @param luaScript - lua script
      * @param returnType - return type
      * @param keys - keys available through KEYS param in script
-     * @param values - values available through VALUES param in script
+     * @param values - values available through ARGV param in script
      * @return result object
+     * @param <R> - type of result
      */
     <R> R eval(String key, Mode mode, String luaScript, ReturnType returnType, List<Object> keys, Object... values);
-    
+
+    /**
+     * Executes a Lua script.
+     * The script is executed over all Redis master or slave nodes in cluster depending on <code>mode</code> value.
+     * <code>resultMapper</code> function reduces all results from Redis nodes into one.
+     *
+     * @param mode - execution mode
+     * @param luaScript - lua script
+     * @param returnType - return type
+     * @param resultMapper - function for reducing multiple results into one
+     * @param values - values available through ARGV param in script
+     * @return result object
+     * @param <R> - type of result
+     */
+    <R> R eval(Mode mode, String luaScript, ReturnType returnType, Function<Collection<R>, R> resultMapper, Object... values);
+
     /**
      * Executes Lua script
      * 
@@ -124,16 +153,10 @@ public interface RScript extends RScriptAsync {
      * @param luaScript - lua script
      * @param returnType - return type
      * @param keys - keys available through KEYS param in script 
-     * @param values - values available through VALUES param in script
+     * @param values - values available through ARGV param in script
      * @return result object
      */
     <R> R eval(Mode mode, String luaScript, ReturnType returnType, List<Object> keys, Object... values);
-
-    /*
-     * Use getScript(Codec) instead
-     */
-    @Deprecated
-    <R> R eval(Mode mode, Codec codec, String luaScript, ReturnType returnType, List<Object> keys, Object... values);
 
     /**
      * Executes Lua script
@@ -145,12 +168,6 @@ public interface RScript extends RScriptAsync {
      * @return result object
      */
     <R> R eval(Mode mode, String luaScript, ReturnType returnType);
-
-    /*
-     * Use getScript(Codec) instead
-     */
-    @Deprecated
-    <R> R eval(Mode mode, Codec codec, String luaScript, ReturnType returnType);
 
     /**
      * Loads Lua script into Redis scripts cache and returns its SHA-1 digest

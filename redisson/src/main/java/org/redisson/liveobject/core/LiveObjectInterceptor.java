@@ -1,5 +1,5 @@
 /**
- * Copyright (c) 2013-2019 Nikita Koksharov
+ * Copyright (c) 2013-2026 Nikita Koksharov
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -15,28 +15,20 @@
  */
 package org.redisson.liveobject.core;
 
-import java.lang.reflect.Method;
-
-import org.redisson.api.RBatch;
+import net.bytebuddy.implementation.bind.annotation.*;
+import org.redisson.RedissonLiveObjectService;
+import org.redisson.RedissonObject;
 import org.redisson.api.RFuture;
 import org.redisson.api.RLiveObject;
 import org.redisson.api.RMap;
-import org.redisson.api.RMultimapAsync;
-import org.redisson.api.RedissonClient;
-import org.redisson.api.annotation.RIndex;
 import org.redisson.client.RedisException;
-import org.redisson.liveobject.misc.ClassUtils;
-import org.redisson.liveobject.misc.Introspectior;
+import org.redisson.command.CommandAsyncExecutor;
+import org.redisson.command.CommandBatchService;
+import org.redisson.liveobject.resolver.MapResolver;
 import org.redisson.liveobject.resolver.NamingScheme;
 
-import net.bytebuddy.description.field.FieldDescription.InDefinedShape;
-import net.bytebuddy.description.field.FieldList;
-import net.bytebuddy.implementation.bind.annotation.AllArguments;
-import net.bytebuddy.implementation.bind.annotation.FieldProxy;
-import net.bytebuddy.implementation.bind.annotation.FieldValue;
-import net.bytebuddy.implementation.bind.annotation.Origin;
-import net.bytebuddy.implementation.bind.annotation.RuntimeType;
-import net.bytebuddy.implementation.bind.annotation.This;
+import java.lang.reflect.InvocationTargetException;
+import java.lang.reflect.Method;
 
 /**
  *
@@ -55,26 +47,19 @@ public class LiveObjectInterceptor {
         void setValue(Object value);
     }
 
-    private final RedissonClient redisson;
-    private final Class<?> originalClass;
-    private final String idFieldName;
-    private final Class<?> idFieldType;
+    private final CommandAsyncExecutor commandExecutor;
+    private final Class<?> entityClass;
     private final NamingScheme namingScheme;
-    private final RedissonObjectBuilder objectBuilder;
+    private final RedissonLiveObjectService service;
+    private final MapResolver mapResolver;
 
-    public LiveObjectInterceptor(RedissonClient redisson, Class<?> entityClass, String idFieldName, RedissonObjectBuilder objectBuilder) {
-        this.redisson = redisson;
-        this.originalClass = entityClass;
-        this.idFieldName = idFieldName;
-        this.objectBuilder = objectBuilder;
-        
-        namingScheme = objectBuilder.getNamingScheme(entityClass);
-        
-        try {
-            this.idFieldType = ClassUtils.getDeclaredField(originalClass, idFieldName).getType();
-        } catch (Exception e) {
-            throw new IllegalArgumentException(e);
-        }
+    public LiveObjectInterceptor(CommandAsyncExecutor commandExecutor, RedissonLiveObjectService service, Class<?> entityClass,
+                                 MapResolver mapResolver) {
+        this.service = service;
+        this.mapResolver = mapResolver;
+        this.commandExecutor = commandExecutor;
+        this.entityClass = entityClass;
+        this.namingScheme = commandExecutor.getObjectBuilder().getNamingScheme(entityClass);
     }
 
     @RuntimeType
@@ -85,72 +70,71 @@ public class LiveObjectInterceptor {
             @FieldValue("liveObjectId") Object id,
             @FieldProxy("liveObjectId") Setter idSetter,
             @FieldProxy("liveObjectId") Getter idGetter,
-            @FieldValue("liveObjectLiveMap") RMap<?, ?> map,
+            @FieldValue("liveObjectLiveMap") RMap<String, ?> map,
             @FieldProxy("liveObjectLiveMap") Setter mapSetter,
             @FieldProxy("liveObjectLiveMap") Getter mapGetter
-    ) throws Exception {
+    ) throws Throwable {
         if ("setLiveObjectId".equals(method.getName())) {
             if (args[0].getClass().isArray()) {
                 throw new UnsupportedOperationException("RId value cannot be an array.");
             }
-            //TODO: distributed locking maybe required.
-            String idKey = getMapKey(args[0]);
-            if (map != null) {
-                if (map.getName().equals(idKey)) {
-                    return null;
-                }
-                try {
-                    map.rename(getMapKey(args[0]));
-                } catch (RedisException e) {
-                    if (e.getMessage() == null || !e.getMessage().startsWith("ERR no such key")) {
-                        throw e;
+            if (idGetter.getValue() != null) {
+                mapResolver.remove(entityClass, idGetter.getValue());
+
+                String idKey = namingScheme.getName(entityClass, args[0]);
+                if (map != null) {
+                    if (((RedissonObject) map).getRawName().equals(idKey)) {
+                        return map;
                     }
-                    //key may already renamed by others.
+                    try {
+                        map.rename(idKey);
+                        idSetter.setValue(args[0]);
+                        return null;
+                    } catch (RedisException e) {
+                        if (e.getMessage() == null || !e.getMessage().startsWith("ERR no such key")) {
+                            throw e;
+                        }
+                        //key may already renamed by others.
+                    }
                 }
             }
-            RMap<Object, Object> liveMap = redisson.getMap(idKey, namingScheme.getCodec());
-            mapSetter.setValue(liveMap);
 
+            idSetter.setValue(args[0]);
             return null;
         }
 
         if ("getLiveObjectId".equals(method.getName())) {
-            if (map == null) {
-                return null;
+            return id;
+        }
+
+        if ("delete".equals(method.getName())) {
+            CommandBatchService ce;
+            if (commandExecutor instanceof CommandBatchService) {
+                ce = (CommandBatchService) commandExecutor;
+            } else {
+                ce = new CommandBatchService(commandExecutor);
             }
-            return namingScheme.resolveId(map.getName());
+
+            Object idd = ((RLiveObject) me).getLiveObjectId();
+            RFuture<Long> deleteFuture = service.delete(idd, me.getClass().getSuperclass(), namingScheme, ce);
+            ce.execute();
+
+            return commandExecutor.get(deleteFuture.toCompletableFuture()) > 0;
+        }
+
+        if (map == null) {
+            map = mapResolver.resolve(commandExecutor, entityClass, id, mapSetter, mapGetter);
         }
 
         if ("getLiveObjectLiveMap".equals(method.getName())) {
             return map;
         }
 
-        if ("isExists".equals(method.getName())) {
-            return map.isExists();
+        try {
+            return method.invoke(map, args);
+        } catch (InvocationTargetException e) {
+            throw e.getCause();
         }
-        
-        if ("delete".equals(method.getName())) {
-            FieldList<InDefinedShape> fields = Introspectior.getFieldsWithAnnotation(me.getClass().getSuperclass(), RIndex.class);
-            RBatch batch = redisson.createBatch();
-            for (InDefinedShape field : fields) {
-                String fieldName = field.getName();
-                Object value = map.get(fieldName);
-                NamingScheme namingScheme = objectBuilder.getNamingScheme(me.getClass().getSuperclass());
-                String indexName = namingScheme.getIndexName(me.getClass().getSuperclass(), fieldName);
-                RMultimapAsync<Object, Object> idsMultimap = batch.getSetMultimap(indexName, namingScheme.getCodec());
-                idsMultimap.removeAsync(value, ((RLiveObject) me).getLiveObjectId());
-            }
-            RFuture<Long> deleteFuture = batch.getKeys().deleteAsync(map.getName());
-            batch.execute();
-            
-            return deleteFuture.getNow() > 0;
-        }
-
-        throw new NoSuchMethodException();
-    }
-
-    private String getMapKey(Object id) {
-        return namingScheme.getName(originalClass, idFieldType, idFieldName, id);
     }
 
 }

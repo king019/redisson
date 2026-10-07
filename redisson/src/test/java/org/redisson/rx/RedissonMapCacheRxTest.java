@@ -1,23 +1,20 @@
 package org.redisson.rx;
 
-import static org.assertj.core.api.Assertions.assertThat;
+import org.awaitility.Awaitility;
+import org.junit.jupiter.api.Assertions;
+import org.junit.jupiter.api.Test;
+import org.redisson.api.RMapCacheRx;
+import org.redisson.api.RMapRx;
+import org.redisson.api.map.event.EntryEvent;
+import org.redisson.api.map.event.EntryExpiredListener;
 
 import java.io.Serializable;
-import java.util.ArrayList;
-import java.util.Arrays;
-import java.util.HashMap;
-import java.util.HashSet;
-import java.util.Iterator;
-import java.util.List;
-import java.util.Map;
+import java.time.Duration;
+import java.util.*;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicBoolean;
 
-import org.junit.Assert;
-import org.junit.Test;
-import org.redisson.api.RMapCacheRx;
-import org.redisson.api.RMapReactive;
-import org.redisson.api.RMapRx;
-import org.redisson.codec.MsgPackJacksonCodec;
+import static org.assertj.core.api.Assertions.assertThat;
 
 public class RedissonMapCacheRxTest extends BaseRxTest {
 
@@ -136,12 +133,12 @@ public class RedissonMapCacheRxTest extends BaseRxTest {
         Map<Integer, Integer> expectedMap = new HashMap<Integer, Integer>();
         expectedMap.put(2, 200);
         expectedMap.put(3, 300);
-        Assert.assertEquals(expectedMap, filtered);
+        Assertions.assertEquals(expectedMap, filtered);
 
         Thread.sleep(1000);
 
         Map<Integer, Integer> filteredAgain = sync(map.getAll(new HashSet<Integer>(Arrays.asList(2, 3, 5))));
-        Assert.assertTrue(filteredAgain.isEmpty());
+        Assertions.assertTrue(filteredAgain.isEmpty());
     }
 
     @Test
@@ -157,7 +154,7 @@ public class RedissonMapCacheRxTest extends BaseRxTest {
         Map<String, Integer> expectedMap = new HashMap<String, Integer>();
         expectedMap.put("B", 200);
         expectedMap.put("C", 300);
-        Assert.assertEquals(expectedMap, filtered);
+        Assertions.assertEquals(expectedMap, filtered);
     }
 
     @Test
@@ -171,7 +168,25 @@ public class RedissonMapCacheRxTest extends BaseRxTest {
 
         Thread.sleep(1000);
 
-        assertThat(toIterator(cache.keyIterator())).containsOnly("0", "2", "3");
+        assertThat(toIterator(cache.keyIterator())).toIterable().containsOnly("0", "2", "3");
+    }
+
+    @Test
+    public void testExpireListener() throws InterruptedException {
+        RMapCacheRx<String, String> cache = redisson.getMapCache("simple");
+        sync(cache.put("0", "8", 1, TimeUnit.SECONDS));
+
+        AtomicBoolean received = new AtomicBoolean();
+        cache.addListener((EntryExpiredListener<String, String>) event -> {
+            assertThat(event.getKey()).isEqualTo("0");
+            assertThat(event.getValue()).isEqualTo("8");
+            received.set(true);
+        }).blockingGet();
+
+        Awaitility.await().atMost(Duration.ofSeconds(7)).untilAsserted(() -> {
+            assertThat(received).isTrue();
+            assertThat(cache.size().blockingGet()).isZero();
+        });
     }
 
     @Test
@@ -183,7 +198,7 @@ public class RedissonMapCacheRxTest extends BaseRxTest {
 
         Thread.sleep(500);
 
-        Assert.assertEquals(0, sync(cache.size()).intValue());
+        Assertions.assertEquals(0, sync(cache.size()).intValue());
     }
 
     @Test
@@ -195,7 +210,7 @@ public class RedissonMapCacheRxTest extends BaseRxTest {
 
         Thread.sleep(500);
 
-        Assert.assertEquals(0, sync(cache.size()).intValue());
+        Assertions.assertEquals(0, sync(cache.size()).intValue());
     }
 
     @Test
@@ -209,7 +224,7 @@ public class RedissonMapCacheRxTest extends BaseRxTest {
 
         Thread.sleep(500);
 
-        Assert.assertEquals(1, sync(cache.size()).intValue());
+        Assertions.assertEquals(1, sync(cache.size()).intValue());
     }
 
     @Test
@@ -222,7 +237,7 @@ public class RedissonMapCacheRxTest extends BaseRxTest {
         sync(map.remove(new SimpleKey("33")));
         sync(map.remove(new SimpleKey("5")));
 
-        Assert.assertEquals(1, sync(map.size()).intValue());
+        Assertions.assertEquals(1, sync(map.size()).intValue());
     }
 
     @Test
@@ -238,21 +253,21 @@ public class RedissonMapCacheRxTest extends BaseRxTest {
         joinMap.put(6, "6");
         sync(map.putAll(joinMap));
 
-        assertThat(toIterator(map.keyIterator())).containsOnly(1, 2, 3, 4, 5, 6);
+        assertThat(toIterator(map.keyIterator())).toIterable().containsOnly(1, 2, 3, 4, 5, 6);
     }
 
     @Test
     public void testContainsValue() throws InterruptedException {
-        RMapCacheRx<SimpleKey, SimpleValue> map = redisson.getMapCache("simple31", new MsgPackJacksonCodec());
-        Assert.assertFalse(sync(map.containsValue(new SimpleValue("34"))));
+        RMapCacheRx<SimpleKey, SimpleValue> map = redisson.getMapCache("simple31");
+        Assertions.assertFalse(sync(map.containsValue(new SimpleValue("34"))));
         sync(map.put(new SimpleKey("33"), new SimpleValue("44"), 1, TimeUnit.SECONDS));
 
-        Assert.assertTrue(sync(map.containsValue(new SimpleValue("44"))));
-        Assert.assertFalse(sync(map.containsValue(new SimpleValue("34"))));
+        Assertions.assertTrue(sync(map.containsValue(new SimpleValue("44"))));
+        Assertions.assertFalse(sync(map.containsValue(new SimpleValue("34"))));
 
         Thread.sleep(1000);
 
-        Assert.assertFalse(sync(map.containsValue(new SimpleValue("44"))));
+        Assertions.assertFalse(sync(map.containsValue(new SimpleValue("44"))));
     }
 
     @Test
@@ -260,12 +275,12 @@ public class RedissonMapCacheRxTest extends BaseRxTest {
         RMapCacheRx<SimpleKey, SimpleValue> map = redisson.getMapCache("simple");
         sync(map.put(new SimpleKey("33"), new SimpleValue("44"), 1, TimeUnit.SECONDS));
 
-        Assert.assertTrue(sync(map.containsKey(new SimpleKey("33"))));
-        Assert.assertFalse(sync(map.containsKey(new SimpleKey("34"))));
+        Assertions.assertTrue(sync(map.containsKey(new SimpleKey("33"))));
+        Assertions.assertFalse(sync(map.containsKey(new SimpleKey("34"))));
 
         Thread.sleep(1000);
 
-        Assert.assertFalse(sync(map.containsKey(new SimpleKey("33"))));
+        Assertions.assertFalse(sync(map.containsKey(new SimpleKey("33"))));
     }
 
     @Test
@@ -274,47 +289,47 @@ public class RedissonMapCacheRxTest extends BaseRxTest {
         sync(map.put(new SimpleKey("1"), new SimpleValue("2"), 1, TimeUnit.SECONDS));
 
         boolean res = sync(map.remove(new SimpleKey("1"), new SimpleValue("2")));
-        Assert.assertTrue(res);
+        Assertions.assertTrue(res);
 
         SimpleValue val1 = sync(map.get(new SimpleKey("1")));
-        Assert.assertNull(val1);
+        Assertions.assertNull(val1);
 
-        Assert.assertEquals(0, sync(map.size()).intValue());
+        Assertions.assertEquals(0, sync(map.size()).intValue());
     }
 
     @Test
     public void testScheduler() throws InterruptedException {
-        RMapCacheRx<SimpleKey, SimpleValue> map = redisson.getMapCache("simple", new MsgPackJacksonCodec());
-        Assert.assertNull(sync(map.get(new SimpleKey("33"))));
+        RMapCacheRx<SimpleKey, SimpleValue> map = redisson.getMapCache("simple");
+        Assertions.assertNull(sync(map.get(new SimpleKey("33"))));
 
         sync(map.put(new SimpleKey("33"), new SimpleValue("44"), 5, TimeUnit.SECONDS));
 
         Thread.sleep(11000);
 
-        Assert.assertEquals(0, sync(map.size()).intValue());
+        Assertions.assertEquals(0, sync(map.size()).intValue());
 
     }
 
     @Test
     public void testPutGet() throws InterruptedException {
-        RMapCacheRx<SimpleKey, SimpleValue> map = redisson.getMapCache("simple01", new MsgPackJacksonCodec());
-        Assert.assertNull(sync(map.get(new SimpleKey("33"))));
+        RMapCacheRx<SimpleKey, SimpleValue> map = redisson.getMapCache("simple01");
+        Assertions.assertNull(sync(map.get(new SimpleKey("33"))));
 
         sync(map.put(new SimpleKey("33"), new SimpleValue("44"), 2, TimeUnit.SECONDS));
 
         SimpleValue val1 = sync(map.get(new SimpleKey("33")));
-        Assert.assertEquals("44", val1.getValue());
+        Assertions.assertEquals("44", val1.getValue());
 
         Thread.sleep(1000);
 
-        Assert.assertEquals(1, sync(map.size()).intValue());
+        Assertions.assertEquals(1, sync(map.size()).intValue());
         SimpleValue val2 = sync(map.get(new SimpleKey("33")));
-        Assert.assertEquals("44", val2.getValue());
-        Assert.assertEquals(1, sync(map.size()).intValue());
+        Assertions.assertEquals("44", val2.getValue());
+        Assertions.assertEquals(1, sync(map.size()).intValue());
 
         Thread.sleep(1000);
 
-        Assert.assertNull(sync(map.get(new SimpleKey("33"))));
+        Assertions.assertNull(sync(map.get(new SimpleKey("33"))));
     }
 
     @Test
@@ -323,20 +338,20 @@ public class RedissonMapCacheRxTest extends BaseRxTest {
         SimpleKey key = new SimpleKey("1");
         SimpleValue value = new SimpleValue("2");
         sync(map.put(key, value));
-        Assert.assertEquals(value, sync(map.putIfAbsent(key, new SimpleValue("3"), 1, TimeUnit.SECONDS)));
-        Assert.assertEquals(value, sync(map.get(key)));
+        Assertions.assertEquals(value, sync(map.putIfAbsent(key, new SimpleValue("3"), 1, TimeUnit.SECONDS)));
+        Assertions.assertEquals(value, sync(map.get(key)));
 
         sync(map.putIfAbsent(new SimpleKey("4"), new SimpleValue("4"), 1, TimeUnit.SECONDS));
-        Assert.assertEquals(new SimpleValue("4"), sync(map.get(new SimpleKey("4"))));
+        Assertions.assertEquals(new SimpleValue("4"), sync(map.get(new SimpleKey("4"))));
 
         Thread.sleep(1000);
 
-        Assert.assertNull(sync(map.get(new SimpleKey("4"))));
+        Assertions.assertNull(sync(map.get(new SimpleKey("4"))));
 
         SimpleKey key1 = new SimpleKey("2");
         SimpleValue value1 = new SimpleValue("4");
-        Assert.assertNull(sync(map.putIfAbsent(key1, value1, 2, TimeUnit.SECONDS)));
-        Assert.assertEquals(value1, sync(map.get(key1)));
+        Assertions.assertNull(sync(map.putIfAbsent(key1, value1, 2, TimeUnit.SECONDS)));
+        Assertions.assertEquals(value1, sync(map.get(key1)));
     }
 
     @Test
@@ -346,21 +361,21 @@ public class RedissonMapCacheRxTest extends BaseRxTest {
         sync(map.put(new SimpleKey("1"), new SimpleValue("2")));
         sync(map.put(new SimpleKey("3"), new SimpleValue("4")));
         sync(map.put(new SimpleKey("5"), new SimpleValue("6")));
-        Assert.assertEquals(3, sync(map.size()).intValue());
+        Assertions.assertEquals(3, sync(map.size()).intValue());
 
         sync(map.put(new SimpleKey("1"), new SimpleValue("2")));
         sync(map.put(new SimpleKey("3"), new SimpleValue("4")));
-        Assert.assertEquals(3, sync(map.size()).intValue());
+        Assertions.assertEquals(3, sync(map.size()).intValue());
 
         sync(map.put(new SimpleKey("1"), new SimpleValue("21")));
         sync(map.put(new SimpleKey("3"), new SimpleValue("41")));
-        Assert.assertEquals(3, sync(map.size()).intValue());
+        Assertions.assertEquals(3, sync(map.size()).intValue());
 
         sync(map.put(new SimpleKey("51"), new SimpleValue("6")));
-        Assert.assertEquals(4, sync(map.size()).intValue());
+        Assertions.assertEquals(4, sync(map.size()).intValue());
 
         sync(map.remove(new SimpleKey("3")));
-        Assert.assertEquals(3, sync(map.size()).intValue());
+        Assertions.assertEquals(3, sync(map.size()).intValue());
     }
 
     @Test
@@ -383,11 +398,11 @@ public class RedissonMapCacheRxTest extends BaseRxTest {
         for (Iterator<Integer> iterator = toIterator(map.keyIterator()); iterator.hasNext();) {
             Integer value = iterator.next();
             if (!keys.remove(value)) {
-                Assert.fail();
+                Assertions.fail();
             }
         }
 
-        Assert.assertEquals(0, keys.size());
+        Assertions.assertEquals(0, keys.size());
     }
 
     @Test
@@ -402,11 +417,11 @@ public class RedissonMapCacheRxTest extends BaseRxTest {
         for (Iterator<Integer> iterator = toIterator(map.valueIterator()); iterator.hasNext();) {
             Integer value = iterator.next();
             if (!values.remove(value)) {
-                Assert.fail();
+                Assertions.fail();
             }
         }
 
-        Assert.assertEquals(0, values.size());
+        Assertions.assertEquals(0, values.size());
     }
 
 }

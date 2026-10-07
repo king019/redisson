@@ -1,5 +1,5 @@
 /**
- * Copyright (c) 2013-2019 Nikita Koksharov
+ * Copyright (c) 2013-2026 Nikita Koksharov
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -15,14 +15,14 @@
  */
 package org.redisson.rx;
 
+import io.reactivex.rxjava3.core.Flowable;
 import org.redisson.RedissonScoredSortedSet;
+import org.redisson.ScanResult;
 import org.redisson.api.RFuture;
 import org.redisson.api.RObject;
 import org.redisson.api.RScoredSortedSetAsync;
 import org.redisson.client.RedisClient;
-import org.redisson.client.protocol.decoder.ListScanResult;
-
-import io.reactivex.Flowable;
+import org.redisson.client.protocol.ScoredEntry;
 
 /**
  * 
@@ -41,22 +41,18 @@ public class RedissonScoredSortedSetRx<V>  {
     private Flowable<V> scanIteratorReactive(String pattern, int count) {
         return new SetRxIterator<V>() {
             @Override
-            protected RFuture<ListScanResult<Object>> scanIterator(RedisClient client, long nextIterPos) {
+            protected RFuture<ScanResult<Object>> scanIterator(RedisClient client, String nextIterPos) {
                 return ((RedissonScoredSortedSet<V>) instance).scanIteratorAsync(client, nextIterPos, pattern, count);
             }
         }.create();
     }
 
     public Flowable<V> takeFirstElements() {
-        return ElementsStream.takeElements(() -> {
-            return instance.takeFirstAsync();
-        });
+        return ElementsStream.takeElements(instance::takeFirstAsync);
     }
     
     public Flowable<V> takeLastElements() {
-        return ElementsStream.takeElements(() -> {
-            return instance.takeLastAsync();
-        });
+        return ElementsStream.takeElements(instance::takeLastAsync);
     }
     
     public String getName() {
@@ -77,6 +73,31 @@ public class RedissonScoredSortedSetRx<V>  {
 
     public Flowable<V> iterator(String pattern, int count) {
         return scanIteratorReactive(pattern, count);
+    }
+
+    private Flowable<ScoredEntry<V>> entryScanIteratorReactive(String pattern, int count) {
+        return new SetRxIterator<ScoredEntry<V>>() {
+            @Override
+            protected RFuture<ScanResult<Object>> scanIterator(RedisClient client, String nextIterPos) {
+                return ((RedissonScoredSortedSet<V>) instance).entryScanIteratorAsync(client, nextIterPos, pattern, count);
+            }
+        }.create();
+    }
+
+    public Flowable<ScoredEntry<V>> entryIterator() {
+        return entryScanIteratorReactive(null, 10);
+    }
+
+    public Flowable<ScoredEntry<V>> entryIterator(String pattern) {
+        return entryScanIteratorReactive(pattern, 10);
+    }
+
+    public Flowable<ScoredEntry<V>> entryIterator(int count) {
+        return entryScanIteratorReactive(null, count);
+    }
+
+    public Flowable<ScoredEntry<V>> entryIterator(String pattern, int count) {
+        return entryScanIteratorReactive(pattern, count);
     }
 
 }

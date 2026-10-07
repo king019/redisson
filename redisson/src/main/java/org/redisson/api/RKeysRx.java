@@ -1,5 +1,5 @@
 /**
- * Copyright (c) 2013-2019 Nikita Koksharov
+ * Copyright (c) 2013-2026 Nikita Koksharov
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -15,13 +15,17 @@
  */
 package org.redisson.api;
 
-import java.util.Collection;
-import java.util.concurrent.TimeUnit;
+import io.reactivex.rxjava3.core.Completable;
+import io.reactivex.rxjava3.core.Flowable;
+import io.reactivex.rxjava3.core.Maybe;
+import io.reactivex.rxjava3.core.Single;
+import java.time.Duration;
+import java.time.Instant;
+import org.redisson.api.options.KeysScanOptions;
+import org.redisson.api.keys.MigrateArgs;
+import org.redisson.client.protocol.Time;
 
-import io.reactivex.Completable;
-import io.reactivex.Flowable;
-import io.reactivex.Maybe;
-import io.reactivex.Single;
+import java.util.concurrent.TimeUnit;
 
 /**
  * 
@@ -41,6 +45,7 @@ public interface RKeysRx {
     
     /**
      * Transfer object from source Redis instance to destination Redis instance
+     * @deprecated use {@link #migrate(MigrateArgs)}  instead
      *
      * @param name of object
      * @param host - destination host
@@ -49,10 +54,17 @@ public interface RKeysRx {
      * @param timeout - maximum idle time in any moment of the communication with the destination instance in milliseconds
      * @return void
      */
+    @Deprecated
     Completable migrate(String name, String host, int port, int database, long timeout);
-    
+    /**
+     * Transfer object from source Redis instance to destination Redis instance
+     *
+     * @param migrateArgs migrateArgs
+     */
+    Completable migrate(MigrateArgs migrateArgs);
     /**
      * Copy object from source Redis instance to destination Redis instance
+     * @deprecated use {@link #migrate(MigrateArgs)}  instead
      *
      * @param name of object
      * @param host - destination host
@@ -61,29 +73,50 @@ public interface RKeysRx {
      * @param timeout - maximum idle time in any moment of the communication with the destination instance in milliseconds
      * @return void
      */
+    @Deprecated
     Completable copy(String name, String host, int port, int database, long timeout);
     
     /**
-     * Set a timeout for object. After the timeout has expired,
-     * the key will automatically be deleted.
+     * Use {@link #expire(Duration, String...)} instead.
      *
      * @param name of object
      * @param timeToLive - timeout before object will be deleted
      * @param timeUnit - timeout time unit
      * @return <code>true</code> if the timeout was set and <code>false</code> if not
      */
+    @Deprecated
     Single<Boolean> expire(String name, long timeToLive, TimeUnit timeUnit);
-    
+
     /**
-     * Set an expire date for object. When expire date comes
-     * the key will automatically be deleted.
+     * Set a timeout for multiple objects. After the timeout has expired,
+     * the keys will automatically be deleted.
+     *
+     * @param duration timeout before keys will be deleted
+     * @param names object names
+     * @return number of keys for which the timeout was set successfully
+     */
+    Single<Long> expire(Duration duration, String... names);
+
+    /**
+     * Use {@link #expireAt(Instant, String...)} instead.
      * 
      * @param name of object
      * @param timestamp - expire date in milliseconds (Unix timestamp)
      * @return <code>true</code> if the timeout was set and <code>false</code> if not
      */
+    @Deprecated
     Single<Boolean> expireAt(String name, long timestamp);
-    
+
+    /**
+     * Set a timeout for multiple objects. After the timeout has expired,
+     * the keys will automatically be deleted.
+     *
+     * @param instant expiration date/time (Unix timestamp in milliseconds)
+     * @param names object names
+     * @return number of keys for which the timeout was set successfully
+     */
+    Single<Long> expireAt(Instant instant, String... names);
+
     /**
      * Clear an expire timeout or expire date for object.
      * 
@@ -153,49 +186,41 @@ public interface RKeysRx {
      * @return keys
      */
     Flowable<String> getKeys();
+
+    /**
+     * Get all keys using iterable. Keys traversing with SCAN operation.
+     *
+     * @param options scan options
+     * @return Iterable object
+     */
+    Flowable<String> getKeys(KeysScanOptions options);
     
     /**
-     * Load keys in incrementally iterate mode. Keys traversed with SCAN operation.
-     * Each SCAN operation loads up to <code>count</code> keys per request.
+     * Use {@link #getKeys(KeysScanOptions)} instead.
      *
      * @param count - keys loaded per request to Redis
      * @return keys
      */
+    @Deprecated
     Flowable<String> getKeys(int count);
 
     /**
-     * Find keys by pattern and load it in incrementally iterate mode.
-     * Keys traversed with SCAN operation.
-     * Each SCAN operation loads up to 10 keys per request.
-     * <p>
-     *
-     *  Supported glob-style patterns:
-     *    h?llo subscribes to hello, hallo and hxllo
-     *    h*llo subscribes to hllo and heeeello
-     *    h[ae]llo subscribes to hello and hallo, but not hillo
+     * Use {@link #getKeys(KeysScanOptions)} instead.
      *
      * @param pattern - match pattern
      * @return keys
      */
+    @Deprecated
     Flowable<String> getKeysByPattern(String pattern);
 
     /**
-     * Get all keys by pattern using iterator. 
-     * Keys traversed with SCAN operation. Each SCAN operation loads 
-     * up to <code>count</code> keys per request. 
-     * <p>
-     *  Supported glob-style patterns:
-     *  <p>
-     *    h?llo subscribes to hello, hallo and hxllo
-     *    <p>
-     *    h*llo subscribes to hllo and heeeello
-     *    <p>
-     *    h[ae]llo subscribes to hello and hallo, but not hillo
+     * Use {@link #getKeys(KeysScanOptions)} instead.
      *
      * @param pattern - match pattern
      * @param count - keys loaded per request to Redis
      * @return keys
      */
+    @Deprecated
     Flowable<String> getKeysByPattern(String pattern, int count);
     
     /**
@@ -208,9 +233,6 @@ public interface RKeysRx {
      * @return slot number
      */
     Single<Integer> getSlot(String key);
-
-    @Deprecated
-    Single<Collection<String>> findKeysByPattern(String pattern);
 
     /**
      * Get random key
@@ -235,6 +257,21 @@ public interface RKeysRx {
      * @return deleted objects amount
      */
     Single<Long> deleteByPattern(String pattern);
+
+    /**
+     * Unlink multiple objects by a key pattern.
+     *
+     * Uses Lua script.
+     *
+     *  Supported glob-style patterns:
+     *    h?llo subscribes to hello, hallo and hxllo
+     *    h*llo subscribes to hllo and heeeello
+     *    h[ae]llo subscribes to hello and hallo, but not hillo
+     *
+     * @param pattern - match pattern
+     * @return deleted objects amount
+     */
+    Single<Long> unlinkByPattern(String pattern);
 
     /**
      * Delete multiple objects by name.
@@ -263,6 +300,16 @@ public interface RKeysRx {
      * @return count of keys
      */
     Single<Long> count();
+
+    /**
+     * Returns the current Redis server time.
+     * <p>
+     * In cluster mode, the request is routed to the shard owning slot 0.
+     * This is not a cluster-wide timestamp.
+     *
+     * @return server time in seconds and microseconds
+     */
+    Single<Time> time();
     
     /**
      * Delete all the keys of the currently selected database
@@ -274,6 +321,15 @@ public interface RKeysRx {
     Completable flushdb();
 
     /**
+     * Swap two databases.
+     * <p>
+     * Requires Redis 4.0+
+     *
+     * @return void
+     */
+    Completable swapdb(int db1, int db2);
+
+    /**
      * Delete all the keys of all the existing databases
      *
      * Uses <code>FLUSHALL</code> Redis command.
@@ -281,5 +337,48 @@ public interface RKeysRx {
      * @return void
      */
     Completable flushall();
+
+    /**
+     * Delete all keys of currently selected database
+     * in background without blocking server.
+     * <p>
+     * Requires Redis 4.0+
+     *
+     * @return void
+     */
+    Completable flushdbParallel();
+
+    /**
+     * Delete all keys of all existing databases
+     * in background without blocking server.
+     * <p>
+     * Requires Redis 4.0+
+     *
+     * @return void
+     */
+    Completable flushallParallel();
+
+    /**
+     * Adds global object event listener
+     * which is invoked for each Redisson object.
+     *
+     * @see org.redisson.api.listener.TrackingListener
+     * @see org.redisson.api.listener.SetObjectListener
+     * @see org.redisson.api.listener.NewObjectListener
+     * @see org.redisson.api.listener.FlushListener
+     * @see org.redisson.api.ExpiredObjectListener
+     * @see org.redisson.api.DeletedObjectListener
+     *
+     * @param listener object event listener
+     * @return listener id
+     */
+    Single<Integer> addListener(ObjectListener listener);
+
+    /**
+     * Removes global object event listener
+     *
+     * @param listenerId - listener id
+     */
+    Completable removeListener(int listenerId);
 
 }

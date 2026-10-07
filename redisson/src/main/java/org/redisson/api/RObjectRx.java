@@ -1,5 +1,5 @@
 /**
- * Copyright (c) 2013-2019 Nikita Koksharov
+ * Copyright (c) 2013-2026 Nikita Koksharov
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -19,20 +19,55 @@ import java.util.concurrent.TimeUnit;
 
 import org.redisson.client.codec.Codec;
 
-import io.reactivex.Completable;
-import io.reactivex.Single;
+import io.reactivex.rxjava3.core.Completable;
+import io.reactivex.rxjava3.core.Single;
 
 /**
- * Base interface for all Redisson objects
+ * Base RxJava2 interface for all Redisson objects
  *
  * @author Nikita Koksharov
  *
  */
 public interface RObjectRx {
 
+    /**
+     * Returns number of seconds spent since last write or read operation over this object.
+     *
+     * @return number of seconds
+     */
+    Single<Long> getIdleTime();
+
+    /**
+     * Returns count of references over this object.
+     *
+     * @return count of reference
+     */
+    Single<Integer> getReferenceCount();
+
+    /**
+     * Returns the logarithmic access frequency counter over this object.
+     *
+     * @return frequency counter
+     */
+    Single<Integer> getAccessFrequency();
+
+    /**
+     * Returns the internal encoding for the Redis object
+     *
+     * @return internal encoding
+     */
+    Single<ObjectEncoding> getInternalEncoding();
+
     String getName();
     
     Codec getCodec();
+    
+    /**
+     * Returns bytes amount used by object in Redis memory. 
+     * 
+     * @return size in bytes
+     */
+    Single<Long> sizeInMemory();
     
     /**
      * Restores object using its state returned by {@link #dump()} method.
@@ -104,7 +139,41 @@ public interface RObjectRx {
      * @return void
      */
     Completable copy(String host, int port, int database, long timeout);
-    
+
+    /**
+     * Copy this object instance to the new instance with a defined name.
+     *
+     * @param destination name of the destination instance
+     * @return <code>true</code> if this object instance was copied else <code>false</code>
+     */
+    Single<Boolean> copy(String destination);
+
+    /**
+     * Copy this object instance to the new instance with a defined name and database.
+     *
+     * @param destination name of the destination instance
+     * @param database database number
+     * @return <code>true</code> if this object instance was copied else <code>false</code>
+     */
+    Single<Boolean> copy(String destination, int database);
+
+    /**
+     * Copy this object instance to the new instance with a defined name, and replace it if it already exists.
+     *
+     * @param destination name of the destination instance
+     * @return <code>true</code> if this object instance was copied else <code>false</code>
+     */
+    Single<Boolean> copyAndReplace(String destination);
+
+    /**
+     * Copy this object instance to the new instance with a defined name and database, and replace it if it already exists.
+     *
+     * @param destination name of the destination instance
+     * @param database database number
+     * @return <code>true</code> if this object instance was copied else <code>false</code>
+     */
+    Single<Boolean> copyAndReplace(String destination, int database);
+
     /**
      * Transfer a object from a source Redis instance to a destination Redis instance
      * in  mode

@@ -1,5 +1,5 @@
 /**
- * Copyright (c) 2013-2019 Nikita Koksharov
+ * Copyright (c) 2013-2026 Nikita Koksharov
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -15,22 +15,12 @@
  */
 package org.redisson.hibernate;
 
-import java.io.File;
-import java.io.IOException;
-import java.io.InputStream;
-import java.util.Arrays;
-import java.util.Properties;
-
+import org.hibernate.boot.registry.selector.spi.StrategySelector;
 import org.hibernate.boot.spi.SessionFactoryOptions;
 import org.hibernate.cache.CacheException;
-import org.hibernate.cache.spi.CacheDataDescription;
-import org.hibernate.cache.spi.CollectionRegion;
-import org.hibernate.cache.spi.EntityRegion;
-import org.hibernate.cache.spi.NaturalIdRegion;
-import org.hibernate.cache.spi.QueryResultsRegion;
-import org.hibernate.cache.spi.RegionFactory;
-import org.hibernate.cache.spi.TimestampsRegion;
+import org.hibernate.cache.spi.*;
 import org.hibernate.cache.spi.access.AccessType;
+import org.hibernate.cfg.Environment;
 import org.hibernate.cfg.Settings;
 import org.hibernate.internal.util.config.ConfigurationHelper;
 import org.jboss.logging.Logger;
@@ -40,11 +30,13 @@ import org.redisson.api.RScript;
 import org.redisson.api.RedissonClient;
 import org.redisson.client.codec.LongCodec;
 import org.redisson.config.Config;
-import org.redisson.hibernate.region.RedissonCollectionRegion;
-import org.redisson.hibernate.region.RedissonEntityRegion;
-import org.redisson.hibernate.region.RedissonNaturalIdRegion;
-import org.redisson.hibernate.region.RedissonQueryRegion;
-import org.redisson.hibernate.region.RedissonTimestampsRegion;
+import org.redisson.hibernate.region.*;
+
+import java.io.File;
+import java.io.InputStream;
+import java.util.Collections;
+import java.util.Properties;
+import java.util.concurrent.atomic.AtomicLong;
 
 /**
  * Hibernate Cache region factory based on Redisson. 
@@ -77,14 +69,27 @@ import org.redisson.hibernate.region.RedissonTimestampsRegion;
     public static final String CONFIG_PREFIX = "hibernate.cache.redisson.";
     
     public static final String REDISSON_CONFIG_PATH = CONFIG_PREFIX + "config";
-    
+
+    public static final String FALLBACK = CONFIG_PREFIX + "fallback";
+
+    private static AtomicLong currentTime = new AtomicLong();
+
     protected RedissonClient redisson;
     private Settings settings;
-    
+    private CacheKeysFactory cacheKeysFactory;
+    private boolean fallback;
+
     @Override
     public void start(SessionFactoryOptions settings, Properties properties) throws CacheException {
         this.redisson = createRedissonClient(properties);
         this.settings = new Settings(settings);
+
+        StrategySelector selector = settings.getServiceRegistry().getService(StrategySelector.class);
+        cacheKeysFactory = selector.resolveDefaultableStrategy(CacheKeysFactory.class,
+                                properties.get(Environment.CACHE_KEYS_FACTORY), new RedissonCacheKeysFactory(redisson.getConfig().getCodec()));
+
+        String fallbackValue = (String) properties.getOrDefault(FALLBACK, "false");
+        fallback = Boolean.parseBoolean(fallbackValue);
     }
     
     protected RedissonClient createRedissonClient(Properties properties) {
@@ -111,14 +116,9 @@ import org.redisson.hibernate.region.RedissonTimestampsRegion;
 
     private Config loadConfig(String configPath) {
         try {
-            return Config.fromJSON(new File(configPath));
-        } catch (IOException e) {
-            // trying next format
-            try {
-                return Config.fromYAML(new File(configPath));
-            } catch (IOException e1) {
-                throw new CacheException("Can't parse default yaml config", e1);
-            }
+            return Config.fromYAML(new File(configPath));
+        } catch (Exception e) {
+            throw new CacheException("Can't parse default config", e);
         }
     }
     
@@ -126,14 +126,9 @@ import org.redisson.hibernate.region.RedissonTimestampsRegion;
         InputStream is = classLoader.getResourceAsStream(fileName);
         if (is != null) {
             try {
-                return Config.fromJSON(is);
-            } catch (IOException e) {
-                try {
-                    is = classLoader.getResourceAsStream(fileName);
-                    return Config.fromYAML(is);
-                } catch (IOException e1) {
-                    throw new CacheException("Can't parse yaml config", e1);
-                }
+                return Config.fromYAML(is);
+            } catch (Exception e) {
+                throw new CacheException("Can't parse config", e);
             }
         }
         return null;
@@ -157,16 +152,35 @@ import org.redisson.hibernate.region.RedissonTimestampsRegion;
     @Override
     public long nextTimestamp() {
         long time = System.currentTimeMillis() << 12;
-        return redisson.getScript(LongCodec.INSTANCE).eval(RScript.Mode.READ_WRITE,
-                  "local currentTime = redis.call('get', KEYS[1]);"
-                + "if currentTime == false then "
-                    + "redis.call('set', KEYS[1], ARGV[1]); "
-                    + "return ARGV[1]; "
-                + "end;"
-                + "local nextValue = math.max(tonumber(ARGV[1]), tonumber(currentTime) + 1); "
-                + "redis.call('set', KEYS[1], nextValue); "
-                + "return nextValue;",
-                RScript.ReturnType.INTEGER, Arrays.<Object>asList("redisson-hibernate-timestamp"), time);
+        try {
+            return redisson.getScript(LongCodec.INSTANCE).eval(RScript.Mode.READ_WRITE,
+                      "local currentTime = redis.call('get', KEYS[1]);"
+                            + "if currentTime == false then "
+                                + "redis.call('set', KEYS[1], ARGV[1]); "
+                                + "return ARGV[1]; "
+                            + "end;"
+                            + "local nextValue = math.max(tonumber(ARGV[1]), tonumber(currentTime) + 1); "
+                            + "redis.call('set', KEYS[1], nextValue); "
+                            + "return nextValue;",
+                            RScript.ReturnType.LONG, Collections.singletonList("redisson-hibernate-timestamp"), time);
+        } catch (Exception e) {
+            if (fallback) {
+                while (true) {
+                    if (currentTime.get() == 0) {
+                        if (currentTime.compareAndSet(0, time)) {
+                            return time;
+                        }
+                    } else {
+                        long currValue = currentTime.get();
+                        long nextTime = Math.max(time, currValue + 1);
+                        if (currentTime.compareAndSet(currValue, nextTime)) {
+                            return nextTime;
+                        }
+                    }
+                }
+            }
+            throw e;
+        }
     }
 
     @Override
@@ -175,7 +189,7 @@ import org.redisson.hibernate.region.RedissonTimestampsRegion;
         log.debug("Building entity cache region: " + regionName);
 
         RMapCache<Object, Object> mapCache = getCache(regionName, properties, ENTITY_DEF);
-        return new RedissonEntityRegion(mapCache, this, metadata, settings, properties, ENTITY_DEF);
+        return new RedissonEntityRegion(mapCache, ((Redisson)redisson).getServiceManager(),this, metadata, settings, properties, ENTITY_DEF, cacheKeysFactory);
     }
 
     @Override
@@ -184,7 +198,7 @@ import org.redisson.hibernate.region.RedissonTimestampsRegion;
         log.debug("Building naturalId cache region: " + regionName);
         
         RMapCache<Object, Object> mapCache = getCache(regionName, properties, NATURAL_ID_DEF);
-        return new RedissonNaturalIdRegion(mapCache, this, metadata, settings, properties, NATURAL_ID_DEF);
+        return new RedissonNaturalIdRegion(mapCache, ((Redisson)redisson).getServiceManager(),this, metadata, settings, properties, NATURAL_ID_DEF, cacheKeysFactory);
     }
 
     @Override
@@ -193,7 +207,7 @@ import org.redisson.hibernate.region.RedissonTimestampsRegion;
         log.debug("Building collection cache region: " + regionName);
         
         RMapCache<Object, Object> mapCache = getCache(regionName, properties, COLLECTION_DEF);
-        return new RedissonCollectionRegion(mapCache, this, metadata, settings, properties, COLLECTION_DEF);
+        return new RedissonCollectionRegion(mapCache, ((Redisson)redisson).getServiceManager(),this, metadata, settings, properties, COLLECTION_DEF, cacheKeysFactory);
     }
 
     @Override
@@ -201,7 +215,7 @@ import org.redisson.hibernate.region.RedissonTimestampsRegion;
         log.debug("Building query cache region: " + regionName);
         
         RMapCache<Object, Object> mapCache = getCache(regionName, properties, QUERY_DEF);
-        return new RedissonQueryRegion(mapCache, this, properties, QUERY_DEF);
+        return new RedissonQueryRegion(mapCache, ((Redisson)redisson).getServiceManager(),this, properties, QUERY_DEF);
     }
 
     @Override
@@ -209,7 +223,7 @@ import org.redisson.hibernate.region.RedissonTimestampsRegion;
         log.debug("Building timestamps cache region: " + regionName);
         
         RMapCache<Object, Object> mapCache = getCache(regionName, properties, TIMESTAMPS_DEF);
-        return new RedissonTimestampsRegion(mapCache, this, properties, TIMESTAMPS_DEF);
+        return new RedissonTimestampsRegion(mapCache, ((Redisson)redisson).getServiceManager(),this, properties, TIMESTAMPS_DEF);
     }
     
     protected RMapCache<Object, Object> getCache(String regionName, Properties properties, String defaultKey) {

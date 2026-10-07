@@ -1,5 +1,5 @@
 /**
- * Copyright (c) 2013-2019 Nikita Koksharov
+ * Copyright (c) 2013-2026 Nikita Koksharov
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -15,6 +15,8 @@
  */
 package org.redisson.api;
 
+import org.redisson.api.queue.QueueMoveElementsArgs;
+
 import java.util.List;
 import java.util.Queue;
 
@@ -27,8 +29,75 @@ import java.util.Queue;
  */
 public interface RQueue<V> extends Queue<V>, RExpirable, RQueueAsync<V> {
 
-    V pollLastAndOfferFirstTo(String dequeName);
+    /**
+     * Retrieves and removes last available tail element of this queue queue and adds it at the head of <code>queueName</code>.
+     *
+     * @param queueName - names of destination queue
+     * @return the tail of this queue, or {@code null} if the
+     *         specified waiting time elapses before an element is available
+     */
+    V pollLastAndOfferFirstTo(String queueName);
 
+    /**
+     * Returns all queue elements at once
+     * 
+     * @return elements
+     */
     List<V> readAll();
-    
+
+    /**
+     * Retrieves and removes the head elements of this queue.
+     * Elements amount limited by <code>limit</code> param.
+     *
+     * @return list of head elements
+     */
+    List<V> poll(int limit);
+
+    /**
+     * Retrieves and removes the head elements of this queue
+     * and adds them at the tail of <code>queueName</code>.
+     * Returns moved elements.
+     * <p>
+     * Code example:
+     * <pre>
+     * List&lt;V&gt; elements = queue.move(QueueMoveElementsArgs.to("myQueue")
+     *                                                 .count(10));
+     *
+     * List&lt;V&gt; elements = queue.move(QueueMoveElementsArgs.to("myQueue")
+     *                                                 .exactly(10));
+     * </pre>
+     * <p>
+     * Requires <b>Redis 8.10.0 and higher.</b>
+     *
+     * @param args - arguments object
+     * @return moved elements
+     */
+    List<V> move(QueueMoveElementsArgs args);
+
+    /**
+     * Adds object event listener
+     *
+     * @see org.redisson.api.listener.TrackingListener
+     * @see org.redisson.api.listener.ListAddListener
+     * @see org.redisson.api.listener.ListRemoveListener
+     * @see org.redisson.api.listener.ListTrimListener
+     * @see org.redisson.api.listener.ListSetListener
+     * @see org.redisson.api.listener.ListInsertListener
+     * @see org.redisson.api.ExpiredObjectListener
+     * @see org.redisson.api.DeletedObjectListener
+     *
+     * @param listener - object event listener
+     * @return listener id
+     */
+    int addListener(ObjectListener listener);
+
+    /**
+     * Returns index of <code>element</code> or
+     * -1 if element isn't found
+     *
+     * @param element to find
+     * @return index of -1 if element isn't found
+     */
+    int indexOf(V element);
+
 }

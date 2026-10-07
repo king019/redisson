@@ -1,5 +1,5 @@
 /**
- * Copyright (c) 2013-2019 Nikita Koksharov
+ * Copyright (c) 2013-2026 Nikita Koksharov
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -30,7 +30,7 @@ public class ReferenceCacheMap<K, V> extends AbstractCacheMap<K, V> {
 
     private final ReferenceQueue<V> queue = new ReferenceQueue<V>();
     
-    private ReferenceCachedValue.Type type;
+    private final ReferenceCachedValue.Type type;
     
     public static <K, V> ReferenceCacheMap<K, V> weak(long timeToLiveInMillis, long maxIdleInMillis) {
         return new ReferenceCacheMap<K, V>(timeToLiveInMillis, maxIdleInMillis, Type.WEAK);
@@ -49,7 +49,7 @@ public class ReferenceCacheMap<K, V> extends AbstractCacheMap<K, V> {
     protected CachedValue<K, V> create(K key, V value, long ttl, long maxIdleTime) {
         return new ReferenceCachedValue<K, V>(key, value, ttl, maxIdleTime, queue, type);
     }
-    
+
     @Override
     protected boolean isFull(K key) {
         return true;
@@ -62,13 +62,15 @@ public class ReferenceCacheMap<K, V> extends AbstractCacheMap<K, V> {
             if (value == null) {
                 break;
             }
-            map.remove(value.getOwner().getKey(), value.getOwner());
+            if (map.remove(value.getOwner().getKey(), value.getOwner())) {
+                onValueRemove((CachedValue<K, V>) value.getOwner());
+            }
         }
         return super.removeExpiredEntries();
     }
-    
+
     @Override
     protected void onMapFull() {
     }
-    
+
 }

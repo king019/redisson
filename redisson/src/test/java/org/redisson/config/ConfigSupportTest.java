@@ -1,67 +1,292 @@
 package org.redisson.config;
 
-import com.fasterxml.jackson.databind.exc.InvalidFormatException;
+import mockit.Invocation;
 import mockit.Mock;
 import mockit.MockUp;
-import org.junit.Test;
+import org.junit.jupiter.api.Test;
+import org.redisson.codec.JsonJackson3Codec;
+import org.redisson.codec.JsonJacksonCodec;
+import org.redisson.codec.Kryo5Codec;
+import org.redisson.client.codec.Codec;
 
 import java.io.IOException;
-import java.net.URI;
+import java.util.Set;
 
-import static org.junit.Assert.*;
+import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.junit.jupiter.api.Assertions.assertEquals;
 
 public class ConfigSupportTest {
-    
+
     @Test
     public void testParsingLiteral() throws IOException {
-        mockHostEnv("1.1.1.1");
+        mockHostEnv("1.1.1.1", null);
         SingleServerConfig config = mkConfig("127.0.0.1");
         
-        assertEquals(URI.create("redis://127.0.0.1"), config.getAddress());
+        assertEquals("redis://127.0.0.1", config.getAddress());
     }
     
     @Test
     public void testParsingEnv() throws IOException {
-        mockHostEnv("1.1.1.1");
-        SingleServerConfig config = mkConfig("${REDIS_URI}");
+        mockHostEnv("1.1.1.1", null);
+        SingleServerConfig config = mkConfig("${REDIS_HOST}");
         
-        assertEquals(URI.create("redis://1.1.1.1"), config.getAddress());
+        assertEquals("redis://1.1.1.1", config.getAddress());
+    }
+
+    @Test
+    public void testParsingProperty() throws IOException {
+        mockHostProperty("1.1.1.1", null);
+        SingleServerConfig config = mkConfig("${REDIS_HOST}");
+
+        assertEquals("redis://1.1.1.1", config.getAddress());
     }
     
-    @Test(expected = InvalidFormatException.class)
+    @Test
+    public void testParsingEnv2() throws IOException {
+        mockHostEnv("1.1.1.1", "6379");
+        SingleServerConfig config = mkConfig("${REDIS_HOST}:${REDIS_PORT}");
+
+        assertEquals("redis://1.1.1.1:6379", config.getAddress());
+    }
+
+    @Test
+    public void testParsingProperty2() throws IOException {
+        mockHostProperty("1.1.1.1", "6379");
+        SingleServerConfig config = mkConfig("${REDIS_HOST}:${REDIS_PORT}");
+
+        assertEquals("redis://1.1.1.1:6379", config.getAddress());
+    }
+
+    @Test
     public void testParsingEnv_envMissing() throws IOException {
-        mockHostEnv(null);
-        mkConfig("${REDIS_URI}");
+        final SingleServerConfig config = mkConfig("${REDIS_URI}");
+
+        assertEquals("redis://${REDIS_URI}", config.getAddress());
     }
     
     @Test
     public void testParsingDefault_envPresent() throws IOException {
-        mockHostEnv("11.0.0.1");
-        SingleServerConfig config = mkConfig("${REDIS_URI:-10.0.0.1}");
+        mockHostEnv("11.0.0.1", null);
+        SingleServerConfig config = mkConfig("${REDIS_HOST:-10.0.0.1}");
         
-        assertEquals(URI.create("redis://11.0.0.1"), config.getAddress());
+        assertEquals("redis://11.0.0.1", config.getAddress());
+    }
+
+    @Test
+    public void testParsingDefault_propertyPresent() throws IOException {
+        mockHostProperty("11.0.0.1", null);
+        SingleServerConfig config = mkConfig("${REDIS_HOST:-10.0.0.1}");
+
+        assertEquals("redis://11.0.0.1", config.getAddress());
+    }
+    
+    @Test
+    public void testParsingDefault_envPresent2() throws IOException {
+        mockHostEnv("11.0.0.1", "1234");
+        SingleServerConfig config = mkConfig("${REDIS_HOST:-127.0.0.1}:${REDIS_PORT:-6379}");
+
+        assertEquals("redis://11.0.0.1:1234", config.getAddress());
+    }
+
+    @Test
+    public void testParsingDefault_propertyPresent2() throws IOException {
+        mockHostProperty("11.0.0.1", "1234");
+        SingleServerConfig config = mkConfig("${REDIS_HOST:-127.0.0.1}:${REDIS_PORT:-6379}");
+
+        assertEquals("redis://11.0.0.1:1234", config.getAddress());
     }
     
     @Test
     public void testParsingDefault_envMissing() throws IOException {
-        mockHostEnv(null);
         SingleServerConfig config = mkConfig("${REDIS_URI:-10.0.0.1}");
         
-        assertEquals(URI.create("redis://10.0.0.1"), config.getAddress());
+        assertEquals("redis://10.0.0.1", config.getAddress());
+    }
+    
+    @Test
+    public void testParsingDefault_envMissing2() throws IOException {
+        SingleServerConfig config = mkConfig("${REDIS_HOST:-127.0.0.1}:${REDIS_PORT:-6379}");
+
+        assertEquals("redis://127.0.0.1:6379", config.getAddress());
+    }
+
+    @Test
+    public void testParsingDefaultPeriod_propertyPresent2() throws IOException {
+        mockHostProperty("11.0.0.1", "1234");
+        SingleServerConfig config = mkConfig("${REDIS_HOST:-127.0.0.1}:${REDIS_PORT:-6379}");
+
+        assertEquals("redis://11.0.0.1:1234", config.getAddress());
+    }
+
+    @Test
+    public void testParsingDefaultPeriod_envMissing() throws IOException {
+        SingleServerConfig config = mkConfig("${REDIS_HOST:-127.0.0.1}:${REDIS_PORT:-6379}");
+
+        assertEquals("redis://127.0.0.1:6379", config.getAddress());
     }
     
     private SingleServerConfig mkConfig(String authorityValue) throws IOException {
         String config = "singleServerConfig:\n  address: redis://" + authorityValue;
         return new ConfigSupport().fromYAML(config, Config.class).getSingleServerConfig();
     }
+
+    @Test
+    public void testKryo5CodecUseReferences() throws Exception {
+        String yaml = "codec: !<org.redisson.codec.Kryo5Codec> {useReferences: true}\n"
+                + "singleServerConfig:\n  address: redis://127.0.0.1";
+
+        Config config = new ConfigSupport().fromYAML(yaml, Config.class);
+
+        assertThat(config.getCodec()).isInstanceOf(Kryo5Codec.class);
+        assertThat(readUseReferences((Kryo5Codec) config.getCodec())).isTrue();
+    }
+
+    @Test
+    public void testKryo5CodecUseReferencesDefault() throws Exception {
+        String yaml = "codec: !<org.redisson.codec.Kryo5Codec> {}\n"
+                + "singleServerConfig:\n  address: redis://127.0.0.1";
+
+        Config config = new ConfigSupport().fromYAML(yaml, Config.class);
+
+        assertThat(config.getCodec()).isInstanceOf(Kryo5Codec.class);
+        assertThat(readUseReferences((Kryo5Codec) config.getCodec())).isFalse();
+    }
+
+    private static boolean readUseReferences(Kryo5Codec codec) throws Exception {
+        java.lang.reflect.Field field = Kryo5Codec.class.getDeclaredField("useReferences");
+        field.setAccessible(true);
+        return field.getBoolean(codec);
+    }
+
+    @Test
+    public void testJsonJacksonCodecAllowedClasses() throws Exception {
+        String yaml = "codec: !<org.redisson.codec.JsonJacksonCodec> {allowedClasses: [org.redisson.Foo, org.redisson.Bar]}\n"
+                + "singleServerConfig:\n  address: redis://127.0.0.1";
+
+        Config config = new ConfigSupport().fromYAML(yaml, Config.class);
+
+        assertThat(config.getCodec()).isInstanceOf(JsonJacksonCodec.class);
+        assertThat(readAllowedClasses(config.getCodec())).containsExactlyInAnyOrder("org.redisson.Foo", "org.redisson.Bar");
+    }
+
+    @Test
+    public void testJsonJacksonCodecAllowedClassesDefault() throws Exception {
+        String yaml = "codec: !<org.redisson.codec.JsonJacksonCodec> {}\n"
+                + "singleServerConfig:\n  address: redis://127.0.0.1";
+
+        Config config = new ConfigSupport().fromYAML(yaml, Config.class);
+
+        assertThat(config.getCodec()).isInstanceOf(JsonJacksonCodec.class);
+        assertThat(readAllowedClasses(config.getCodec())).isEmpty();
+    }
+
+    @Test
+    public void testJsonJackson3CodecAllowedClasses() throws Exception {
+        String yaml = "codec: !<org.redisson.codec.JsonJackson3Codec> {allowedClasses: [org.redisson.Foo]}\n"
+                + "singleServerConfig:\n  address: redis://127.0.0.1";
+
+        Config config = new ConfigSupport().fromYAML(yaml, Config.class);
+
+        assertThat(config.getCodec()).isInstanceOf(JsonJackson3Codec.class);
+        assertThat(readAllowedClasses(config.getCodec())).containsExactly("org.redisson.Foo");
+    }
+
+    @Test
+    public void testJsonJackson3CodecAllowedClassesDefault() throws Exception {
+        String yaml = "codec: !<org.redisson.codec.JsonJackson3Codec> {}\n"
+                + "singleServerConfig:\n  address: redis://127.0.0.1";
+
+        Config config = new ConfigSupport().fromYAML(yaml, Config.class);
+
+        assertThat(config.getCodec()).isInstanceOf(JsonJackson3Codec.class);
+        assertThat(readAllowedClasses(config.getCodec())).isEmpty();
+    }
+
+    @Test
+    public void testJsonJacksonCodecAllowedClassesMergeKey() throws Exception {
+        String yaml = "codec: !<org.redisson.codec.JsonJacksonCodec>\n"
+                + "  <<: {allowedClasses: [org.redisson.Foo]}\n"
+                + "singleServerConfig:\n  address: redis://127.0.0.1";
+
+        Config config = new ConfigSupport().fromYAML(yaml, Config.class);
+
+        assertThat(readAllowedClasses(config.getCodec())).containsExactly("org.redisson.Foo");
+    }
+
+    @Test
+    public void testJsonJacksonCodecUnknownSettingIsRejected() {
+        String yaml = "codec: !<org.redisson.codec.JsonJacksonCodec> {allowedClass: [org.redisson.Foo]}\n"
+                + "singleServerConfig:\n  address: redis://127.0.0.1";
+
+        assertThatThrownBy(() -> new ConfigSupport().fromYAML(yaml, Config.class))
+                .hasMessageContaining("allowedClass");
+    }
+
+    @Test
+    public void testJsonJacksonCodecNonListAllowedClassesIsRejected() {
+        String yaml = "codec: !<org.redisson.codec.JsonJacksonCodec> {allowedClasses: org.redisson.Foo}\n"
+                + "singleServerConfig:\n  address: redis://127.0.0.1";
+
+        assertThatThrownBy(() -> new ConfigSupport().fromYAML(yaml, Config.class))
+                .hasMessageContaining("allowedClasses");
+    }
+
+    @Test
+    public void testAvailabilityZoneReadMode() throws IOException {
+        String yaml = "clusterServersConfig:\n"
+                + "  nodeAddresses:\n"
+                + "  - \"redis://127.0.0.1:7000\"\n"
+                + "  readMode: \"AZ_AFFINITY_SLAVES_AND_MASTER\"\n"
+                + "  clientAvailabilityZone: \"Uocm:PHX-AD-1\"\n";
+
+        Config config = new ConfigSupport().fromYAML(yaml, Config.class);
+
+        assertThat(config.getClusterServersConfig().getReadMode()).isEqualTo(ReadMode.AZ_AFFINITY_SLAVES_AND_MASTER);
+        assertThat(config.getClusterServersConfig().getClientAvailabilityZone()).isEqualTo("Uocm:PHX-AD-1");
+
+        Config roundTrip = new ConfigSupport().fromYAML(config.toYAML(), Config.class);
+        assertThat(roundTrip.getClusterServersConfig().getReadMode()).isEqualTo(ReadMode.AZ_AFFINITY_SLAVES_AND_MASTER);
+        assertThat(roundTrip.getClusterServersConfig().getClientAvailabilityZone()).isEqualTo("Uocm:PHX-AD-1");
+    }
+
+    @SuppressWarnings("unchecked")
+    private static Set<String> readAllowedClasses(Codec codec) throws Exception {
+        java.lang.reflect.Field field = codec.getClass().getDeclaredField("allowedClasses");
+        field.setAccessible(true);
+        return (Set<String>) field.get(codec);
+    }
     
-    private void mockHostEnv(String value) {
+    private void mockHostEnv(String host, String port) {
         new MockUp<System>() {
             @Mock
-            String getenv(String name) {
-                return value;
+            String getenv(Invocation inv, String name) {
+                switch (name) {
+                    case "REDIS_HOST":
+                        return host;
+                    case "REDIS_PORT":
+                        return port;
+                    default:
+                        return inv.proceed(name);
+                }
             }
         };
     }
-    
+
+    private void mockHostProperty(String host, String port) {
+        MockUp<System> m = new MockUp<System>() {
+            @Mock
+            String getProperty(Invocation inv, String name, String def) {
+                switch (name) {
+                    case "REDIS_HOST":
+                        return host;
+                    case "REDIS_PORT":
+                        return port;
+                    default:
+                        return inv.proceed(name, def);
+                }
+            }
+        };
+    }
+
 }

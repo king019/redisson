@@ -1,5 +1,5 @@
 /**
- * Copyright (c) 2013-2019 Nikita Koksharov
+ * Copyright (c) 2013-2026 Nikita Koksharov
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -15,45 +15,28 @@
  */
 package org.redisson.command;
 
-import java.util.concurrent.atomic.AtomicBoolean;
-
-import org.redisson.api.RFuture;
-import org.redisson.misc.RPromise;
-import org.redisson.misc.RedissonPromise;
+import java.util.concurrent.CompletableFuture;
 
 /**
  * 
  * @author Nikita Koksharov
  *
  */
-public class BatchPromise<T> extends RedissonPromise<T> {
+public class BatchPromise<T> extends CompletableFuture<T> {
 
-    private final AtomicBoolean executed;
-    private final RFuture<Void> sentPromise = new RedissonPromise<Void>();
+    private final CompletableFuture<Void> sentPromise = new CompletableFuture<>();
     
-    public BatchPromise(AtomicBoolean executed) {
+    public BatchPromise() {
         super();
-        this.executed = executed;
     }
     
-    public RFuture<Void> getSentPromise() {
+    public CompletableFuture<Void> getSentPromise() {
         return sentPromise;
     }
     
     @Override
-    public RPromise<T> sync() throws InterruptedException {
-        if (executed.get()) {
-            return super.sync();
-        }
-        return (RPromise<T>) sentPromise.sync();
+    public boolean cancel(boolean mayInterruptIfRunning) {
+        return false;
     }
-    
-    @Override
-    public RPromise<T> syncUninterruptibly() {
-        if (executed.get()) {
-            return super.syncUninterruptibly();
-        }
-        return (RPromise<T>) sentPromise.syncUninterruptibly();
-    }
-    
+
 }

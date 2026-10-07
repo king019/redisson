@@ -1,5 +1,5 @@
 /**
- * Copyright (c) 2013-2019 Nikita Koksharov
+ * Copyright (c) 2013-2026 Nikita Koksharov
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -15,11 +15,16 @@
  */
 package org.redisson.api;
 
-import java.util.Map;
-import java.util.concurrent.TimeUnit;
-
+import org.redisson.api.map.MapLoader;
 import org.redisson.api.map.MapWriter;
 import org.redisson.api.map.event.MapEntryListener;
+
+import java.time.Duration;
+import java.util.Map;
+import java.util.Set;
+import java.util.concurrent.TimeUnit;
+import java.util.function.BiFunction;
+import java.util.function.Function;
 
 /**
  * <p>Map-based cache with ability to set TTL for each entry via
@@ -39,17 +44,26 @@ import org.redisson.api.map.event.MapEntryListener;
  * @param <K> key
  * @param <V> value
  */
-public interface RMapCache<K, V> extends RMap<K, V>, RMapCacheAsync<K, V>, RDestroyable {
+public interface RMapCache<K, V> extends RMap<K, V>, RMapCacheAsync<K, V>, RLeasedMap<K, V> {
 
     /**
-     * Sets max size of the map.
+     * Sets max size of the map and overrides current value.
      * Superfluous elements are evicted using LRU algorithm.
      * 
      * @param maxSize - max size
      *                  If <code>0</code> the cache is unbounded (default).
      */
     void setMaxSize(int maxSize);
-    
+
+    /**
+     * Sets max size of the map and overrides current value.
+     * Superfluous elements are evicted using defined algorithm.
+     *
+     * @param maxSize - max size
+     * @param mode - eviction mode
+     */
+    void setMaxSize(int maxSize, EvictionMode mode);
+
     /**
      * Tries to set max size of the map. 
      * Superfluous elements are evicted using LRU algorithm. 
@@ -59,7 +73,45 @@ public interface RMapCache<K, V> extends RMap<K, V>, RMapCacheAsync<K, V>, RDest
      *         If <code>0</code> the cache is unbounded (default).
      */
     boolean trySetMaxSize(int maxSize);
-    
+
+    /**
+     * Tries to set max size of the map.
+     * Superfluous elements are evicted using defined algorithm.
+     *
+     * @param maxSize - max size
+     * @param mode - eviction mode
+     * @return <code>true</code> if max size has been successfully set, otherwise <code>false</code>.
+     */
+    boolean trySetMaxSize(int maxSize, EvictionMode mode);
+    /**
+     * If the specified key is not already associated
+     * with a value, attempts to compute its value using the given mapping function and enters it into this map .
+     * <p>
+     * Stores value mapped by key with specified time to live.
+     * Entry expires after specified time to live.
+     *
+     * @param key - map key
+     * @param ttl - time to live for key\value entry.
+     *              If <code>0</code> then stores infinitely.
+     * @param mappingFunction the mapping function to compute a value
+     * @return current associated value
+     */
+    V computeIfAbsent(K key, Duration ttl, Function<? super K, ? extends V> mappingFunction);
+
+    /**
+     * Computes a new mapping for the specified key and its current mapped value.
+     * <p>
+     * Stores value mapped by key with specified time to live.
+     * Entry expires after specified time to live.
+     *
+     * @param key - map key
+     * @param ttl - time to live for key\value entry.
+     *              If <code>0</code> then stores infinitely.
+     * @param remappingFunction - function to compute a value
+     * @return the new value associated with the specified key, or {@code null} if none
+     */
+    V compute(K key, Duration ttl, BiFunction<? super K, ? super V, ? extends V> remappingFunction);
+
     /**
      * If the specified key is not already associated
      * with a value, associate it with the given value.
@@ -240,26 +292,162 @@ public interface RMapCache<K, V> extends RMap<K, V>, RMapCacheAsync<K, V>, RDest
      * <p>
      * If {@link MapWriter} is defined then new map entries will be stored in write-through mode. 
      *
-     * @param map - mappings to be stored in this map
-     * @param ttl - time to live for all key\value entries.
+     * @param map mappings to be stored in this map
+     * @param ttl time to live for all key\value entries.
      *              If <code>0</code> then stores infinitely.
-     * @param ttlUnit - time unit
+     * @param ttlUnit time unit
      */
     void putAll(java.util.Map<? extends K, ? extends V> map, long ttl, TimeUnit ttlUnit);
-    
+
     /**
      * Associates the specified <code>value</code> with the specified <code>key</code>
      * in batch.
      * <p>
-     * If {@link MapWriter} is defined then new map entries are stored in write-through mode. 
+     * If {@link MapWriter} is defined then new map entries will be stored in write-through mode.
      *
-     * @param map - mappings to be stored in this map
-     * @param ttl - time to live for all key\value entries.
-     *              If <code>0</code> then stores infinitely.
-     * @param ttlUnit - time unit
-     * @return void
+     * @param map mappings to be stored in this map
+     * @param ttl time to live for all key\value entries.
+     *              If <code>0</code> then time to live doesn't affect entry expiration.
+     * @param ttlUnit time unit
+     * @param maxIdleTime max idle time for all key\value entries.
+     *              If <code>0</code> then max idle time doesn't affect entry expiration.
+     * @param maxIdleUnit time unit
+     * <p>
+     * if <code>maxIdleTime</code> and <code>ttl</code> params are equal to <code>0</code>
+     * then entries store infinitely.
      */
-    RFuture<Void> putAllAsync(Map<? extends K, ? extends V> map, long ttl, TimeUnit ttlUnit);
+    void putAll(java.util.Map<? extends K, ? extends V> map, long ttl, TimeUnit ttlUnit,
+                long maxIdleTime, TimeUnit maxIdleUnit);
+
+    /**
+     * Use {@link #expireEntry(Object, Duration, Duration)} instead.
+     *
+     * @param key - map key
+     * @param ttl - time to live for key\value entry.
+     *              If <code>0</code> then time to live doesn't affect entry expiration.
+     * @param ttlUnit - time unit
+     * @param maxIdleTime - max idle time for key\value entry.
+     *              If <code>0</code> then max idle time doesn't affect entry expiration.
+     * @param maxIdleUnit - time unit
+     * <p>
+     * if <code>maxIdleTime</code> and <code>ttl</code> params are equal to <code>0</code>
+     * then entry stores infinitely.
+     *
+     * @return returns <code>false</code> if entry already expired or doesn't exist,
+     *         otherwise returns <code>true</code>.
+     */
+    @Deprecated
+    boolean updateEntryExpiration(K key, long ttl, TimeUnit ttlUnit, long maxIdleTime, TimeUnit maxIdleUnit);
+
+    /**
+     * Updates time to live and max idle time of specified entry by key.
+     * Entry expires when specified time to live or max idle time was reached.
+     * <p>
+     * Returns <code>false</code> if entry already expired or doesn't exist,
+     * otherwise returns <code>true</code>.
+     *
+     * @param key map key
+     * @param ttl time to live for key\value entry.
+     *              If <code>0</code> then time to live doesn't affect entry expiration.
+     * @param maxIdleTime max idle time for key\value entry.
+     *              If <code>0</code> then max idle time doesn't affect entry expiration.
+     * <p>
+     * if <code>maxIdleTime</code> and <code>ttl</code> params are equal to <code>0</code>
+     * then entry stores infinitely.
+     *
+     * @return returns <code>false</code> if entry already expired or doesn't exist,
+     *         otherwise returns <code>true</code>.
+     */
+    boolean expireEntry(K key, Duration ttl, Duration maxIdleTime);
+
+    /**
+     * Updates time to live and max idle time of specified entries by keys.
+     * Entries expires when specified time to live or max idle time was reached.
+     * <p>
+     * Returns amount of updated entries.
+     *
+     * @param keys map keys
+     * @param ttl time to live for key\value entries.
+     *              If <code>0</code> then time to live doesn't affect entry expiration.
+     * @param maxIdleTime max idle time for key\value entries.
+     *              If <code>0</code> then max idle time doesn't affect entry expiration.
+     * <p>
+     * if <code>maxIdleTime</code> and <code>ttl</code> params are equal to <code>0</code>
+     * then entries are stored infinitely.
+     *
+     * @return amount of updated entries.
+     */
+    int expireEntries(Set<K> keys, Duration ttl, Duration maxIdleTime);
+
+    /**
+     * Sets time to live and max idle time of specified entry by key.
+     * If these parameters weren't set before.
+     * Entry expires when specified time to live or max idle time was reached.
+     * <p>
+     * Returns <code>false</code> if entry already has expiration time or doesn't exist,
+     * otherwise returns <code>true</code>.
+     *
+     * @param key map key
+     * @param ttl time to live for key\value entry.
+     *              If <code>0</code> then time to live doesn't affect entry expiration.
+     * @param maxIdleTime max idle time for key\value entry.
+     *              If <code>0</code> then max idle time doesn't affect entry expiration.
+     * <p>
+     * if <code>maxIdleTime</code> and <code>ttl</code> params are equal to <code>0</code>
+     * then entry stores infinitely.
+     *
+     * @return returns <code>false</code> if entry already has expiration time or doesn't exist,
+     *         otherwise returns <code>true</code>.
+     */
+    boolean expireEntryIfNotSet(K key, Duration ttl, Duration maxIdleTime);
+
+    /**
+     * Sets time to live and max idle time of specified entries by keys.
+     * If these parameters weren't set before.
+     * Entries expire when specified time to live or max idle time was reached.
+     * <p>
+     * Returns amount of updated entries.
+     *
+     * @param keys map keys
+     * @param ttl time to live for key\value entry.
+     *              If <code>0</code> then time to live doesn't affect entry expiration.
+     * @param maxIdleTime max idle time for key\value entry.
+     *              If <code>0</code> then max idle time doesn't affect entry expiration.
+     * <p>
+     * if <code>maxIdleTime</code> and <code>ttl</code> params are equal to <code>0</code>
+     * then entry stores infinitely.
+     *
+     * @return amount of updated entries.
+     */
+    int expireEntriesIfNotSet(Set<K> keys, Duration ttl, Duration maxIdleTime);
+
+    /**
+     * Returns the value mapped by defined <code>key</code> or {@code null} if value is absent.
+     * <p>
+     * If map doesn't contain value for specified key and {@link MapLoader} is defined
+     * then value will be loaded in read-through mode.
+     * <p>
+     * NOTE: Idle time of entry is not taken into account.
+     * Entry last access time isn't modified if map limited by size.
+     *
+     * @param key the key
+     * @return the value mapped by defined <code>key</code> or {@code null} if value is absent
+     */
+    V getWithTTLOnly(K key);
+
+    /**
+     * Returns map slice contained the mappings with defined <code>keys</code>.
+     * <p>
+     * If map doesn't contain value/values for specified key/keys and {@link MapLoader} is defined
+     * then value/values will be loaded in read-through mode.
+     * <p>
+     * NOTE: Idle time of entry is not taken into account.
+     * Entry last access time isn't modified if map limited by size.
+     *
+     * @param keys map keys
+     * @return Map slice
+     */
+    Map<K, V> getAllWithTTLOnly(Set<K> keys);
 
     /**
      * Returns the number of entries in cache.
@@ -272,26 +460,26 @@ public interface RMapCache<K, V> extends RMap<K, V>, RMapCacheAsync<K, V>, RDest
 
     /**
      * Adds map entry listener
-     * 
+     *
      * @see org.redisson.api.map.event.EntryCreatedListener
      * @see org.redisson.api.map.event.EntryUpdatedListener
      * @see org.redisson.api.map.event.EntryRemovedListener
      * @see org.redisson.api.map.event.EntryExpiredListener
-     * 
+     *
      * @param listener - entry listener
      * @return listener id
      */
     int addListener(MapEntryListener listener);
-    
+
     /**
      * Removes map entry listener
-     * 
+     *
      * @param listenerId - listener id
      */
     void removeListener(int listenerId);
 
     /**
-     * Remaining time to live of map entry associated with a <code>key</code>. 
+     * Remaining time to live of map entry associated with a <code>key</code>.
      *
      * @param key - map key
      * @return time in milliseconds
@@ -299,5 +487,5 @@ public interface RMapCache<K, V> extends RMap<K, V>, RMapCacheAsync<K, V>, RDest
      *          -1 if the key exists but has no associated expire.
      */
     long remainTimeToLive(K key);
-    
+
 }

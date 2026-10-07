@@ -1,5 +1,5 @@
 /**
- * Copyright (c) 2013-2019 Nikita Koksharov
+ * Copyright (c) 2013-2026 Nikita Koksharov
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -15,11 +15,10 @@
  */
 package org.redisson.client.protocol.decoder;
 
-import java.util.List;
-
-import org.redisson.api.StreamConsumer;
+import org.redisson.api.stream.StreamConsumer;
 import org.redisson.client.handler.State;
-import org.redisson.client.protocol.Decoder;
+
+import java.util.List;
 
 /**
  * 
@@ -29,14 +28,13 @@ import org.redisson.client.protocol.Decoder;
 public class StreamConsumerInfoDecoder implements MultiDecoder<StreamConsumer> {
 
     @Override
-    public Decoder<Object> getDecoder(int paramNum, State state) {
-        return null;
-    }
-
-    @Override
     public StreamConsumer decode(List<Object> parts, State state) {
-        return new StreamConsumer((String) parts.get(1), 
-                ((Long) parts.get(3)).intValue(), (Long) parts.get(5));
+        if (parts.size() > 6) {
+            return new StreamConsumer((String) parts.get(1),
+                    ((Long) parts.get(3)).intValue(), (Long) parts.get(5), (Long) parts.get(7));
+        }
+        return new StreamConsumer((String) parts.get(1),
+                ((Long) parts.get(3)).intValue(), (Long) parts.get(5), -1);
     }
 
 }

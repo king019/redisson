@@ -1,5 +1,5 @@
 /**
- * Copyright (c) 2013-2019 Nikita Koksharov
+ * Copyright (c) 2013-2026 Nikita Koksharov
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -15,9 +15,11 @@
  */
 package org.redisson.api;
 
-import java.util.BitSet;
-
+import org.redisson.api.bitset.BitFieldArgs;
 import reactor.core.publisher.Mono;
+
+import java.util.BitSet;
+import java.util.List;
 
 /**
  * Reactive interface for BitSet object
@@ -26,6 +28,199 @@ import reactor.core.publisher.Mono;
  *
  */
 public interface RBitSetReactive extends RExpirableReactive {
+
+    /**
+     * Returns signed number at specified
+     * <code>offset</code> and <code>size</code>
+     *
+     * @param size - size of signed number up to 64 bits
+     * @param offset - offset of signed number
+     * @return signed number
+     */
+    Mono<Long> getSigned(int size, long offset);
+
+    /**
+     * Returns previous value of signed number and replaces it
+     * with defined <code>value</code> at specified <code>offset</code>
+     *
+     * @param size - size of signed number up to 64 bits
+     * @param offset - offset of signed number
+     * @param value - value of signed number
+     * @return previous value of signed number
+     */
+    Mono<Long> setSigned(int size, long offset, long value);
+
+    /**
+     * Increments current signed value by
+     * defined <code>increment</code> value and <code>size</code>
+     * at specified <code>offset</code>
+     * and returns result.
+     *
+     * @param size - size of signed number up to 64 bits
+     * @param offset - offset of signed number
+     * @param increment - increment value
+     * @return result value
+     */
+    Mono<Long> incrementAndGetSigned(int size, long offset, long increment);
+
+    /**
+     * Returns unsigned number at specified
+     * <code>offset</code> and <code>size</code>
+     *
+     * @param size - size of unsigned number up to 64 bits
+     * @param offset - offset of unsigned number
+     * @return unsigned number
+     */
+    Mono<Long> getUnsigned(int size, long offset);
+
+    /**
+     * Returns previous value of unsigned number and replaces it
+     * with defined <code>value</code> at specified <code>offset</code>
+     *
+     * @param size - size of unsigned number up to 64 bits
+     * @param offset - offset of unsigned number
+     * @param value - value of unsigned number
+     * @return previous value of unsigned number
+     */
+    Mono<Long> setUnsigned(int size, long offset, long value);
+
+    /**
+     * Increments current unsigned value by
+     * defined <code>increment</code> value and <code>size</code>
+     * at specified <code>offset</code>
+     * and returns result.
+     *
+     * @param size - size of unsigned number up to 64 bits
+     * @param offset - offset of unsigned number
+     * @param increment - increment value
+     * @return result value
+     */
+    Mono<Long> incrementAndGetUnsigned(int size, long offset, long increment);
+
+    /**
+     * Executes BITFIELD command with multiple subcommands
+     * and returns result list in the same order.
+     * if ReadMode is Slave or one of the availability zone modes
+     * (AZ_AFFINITY, AZ_AFFINITY_SLAVES_AND_MASTER, AZ_AFFINITY_MASTER_SLAVE)
+     * And Args is only get commands,
+     * then BITFIELD_RO command will be executed
+     *
+     * @param args - bitfield arguments
+     * @return result values
+     */
+    Mono<List<Long>> bitField(BitFieldArgs args);
+
+    /**
+     * Returns byte number at specified <code>offset</code>
+     *
+     * @param offset - offset of number
+     * @return number
+     */
+    Mono<Byte> getByte(long offset);
+
+    /**
+     * Returns previous value of byte number and replaces it
+     * with defined <code>value</code> at specified <code>offset</code>
+     *
+     * @param offset - offset of number
+     * @param value - value of number
+     * @return previous value of number
+     */
+    Mono<Byte> setByte(long offset, byte value);
+
+    /**
+     * Increments current byte value on defined <code>increment</code> value at specified <code>offset</code>
+     * and returns result.
+     *
+     * @param offset - offset of number
+     * @param increment - increment value
+     * @return result value
+     */
+    Mono<Byte> incrementAndGetByte(long offset, byte increment);
+
+    /**
+     * Returns short number at specified <code>offset</code>
+     *
+     * @param offset - offset of number
+     * @return number
+     */
+    Mono<Short> getShort(long offset);
+
+    /**
+     * Returns previous value of short number and replaces it
+     * with defined <code>value</code> at specified <code>offset</code>
+     *
+     * @param offset - offset of number
+     * @param value - value of number
+     * @return previous value of number
+     */
+    Mono<Short> setShort(long offset, short value);
+
+    /**
+     * Increments current short value on defined <code>increment</code> value at specified <code>offset</code>
+     * and returns result.
+     *
+     * @param offset - offset of number
+     * @param increment - increment value
+     * @return result value
+     */
+    Mono<Short> incrementAndGetShort(long offset, short increment);
+
+    /**
+     * Returns integer number at specified <code>offset</code>
+     *
+     * @param offset - offset of number
+     * @return number
+     */
+    Mono<Integer> getInteger(long offset);
+
+    /**
+     * Returns previous value of integer number and replaces it
+     * with defined <code>value</code> at specified <code>offset</code>
+     *
+     * @param offset - offset of number
+     * @param value - value of number
+     * @return previous value of number
+     */
+    Mono<Integer> setInteger(long offset, int value);
+
+    /**
+     * Increments current integer value on defined <code>increment</code> value at specified <code>offset</code>
+     * and returns result.
+     *
+     * @param offset - offset of number
+     * @param increment - increment value
+     * @return result value
+     */
+    Mono<Integer> incrementAndGetInteger(long offset, int increment);
+
+    /**
+     * Returns long number at specified <code>offset</code>
+     *
+     * @param offset - offset of number
+     * @return number
+     */
+    Mono<Long> getLong(long offset);
+
+    /**
+     * Returns previous value of long number and replaces it
+     * with defined <code>value</code> at specified <code>offset</code>
+     *
+     * @param offset - offset of number
+     * @param value - value of number
+     * @return previous value of number
+     */
+    Mono<Long> setLong(long offset, long value);
+
+    /**
+     * Increments current long value on defined <code>increment</code> value at specified <code>offset</code>
+     * and returns result.
+     *
+     * @param offset - offset of number
+     * @param increment - increment value
+     * @return result value
+     */
+    Mono<Long> incrementAndGetLong(long offset, long increment);
 
     Mono<byte[]> toByteArray();
 
@@ -69,9 +264,9 @@ public interface RBitSetReactive extends RExpirableReactive {
     /**
      * Executes NOT operation over all bits
      * 
-     * @return void
+     * @return length in bytes of the destination key
      */
-    Mono<Void> not();
+    Mono<Long> not();
 
     /**
      * Set all bits to one from <code>fromIndex</code> (inclusive) to <code>toIndex</code> (exclusive)
@@ -96,6 +291,14 @@ public interface RBitSetReactive extends RExpirableReactive {
      * @return <code>true</code> if bit set to one and <code>false</code> overwise.
      */
     Mono<Boolean> get(long bitIndex);
+    
+    /**
+     * Returns a boolean array where each element of the array corresponds to the query result of the input parameters.
+     *
+     * @param bitIndexes indexes of bit
+     * @return Returns a boolean array where each element of the array corresponds to the query result of the input parameters.
+     */
+    Mono<boolean[]> get(long... bitIndexes);
 
     /**
      * Set bit to one at specified bitIndex
@@ -144,26 +347,66 @@ public interface RBitSetReactive extends RExpirableReactive {
      * Stores result into this object.
      * 
      * @param bitSetNames - name of stored bitsets
-     * @return void
+     * @return length in bytes of the destination key
      */
-    Mono<Void> or(String... bitSetNames);
+    Mono<Long> or(String... bitSetNames);
 
     /**
      * Executes AND operation over this object and specified bitsets.
      * Stores result into this object.
      * 
      * @param bitSetNames - name of stored bitsets
-     * @return void
+     * @return length in bytes of the destination key
      */
-    Mono<Void> and(String... bitSetNames);
+    Mono<Long> and(String... bitSetNames);
 
     /**
      * Executes XOR operation over this object and specified bitsets.
      * Stores result into this object.
      * 
      * @param bitSetNames - name of stored bitsets
-     * @return void
+     * @return length in bytes of the destination key
      */
-    Mono<Void> xor(String... bitSetNames);
+    Mono<Long> xor(String... bitSetNames);
+
+    /**
+     * Executes bitwise DIFF operation over this object and specified bitsets.
+     * Sets bits that are set in this object but not in any of the other bitsets.
+     * Stores result into this object.
+     *
+     * @param bitSetNames name of stored bitsets
+     * @return length in bytes of the destination key
+     */
+    Mono<Long> diff(String... bitSetNames);
+
+    /**
+     * Executes bitwise DIFF1 operation over this object and specified bitsets.
+     * Sets bits that are set in one or more of the other bitsets but not in this object.
+     * Stores result into this object.
+     *
+     * @param bitSetNames name of stored bitsets
+     * @return length in bytes of the destination key
+     */
+    Mono<Long> diffInverse(String... bitSetNames);
+
+    /**
+     * Executes bitwise ANDOR operation over this object and specified bitsets.
+     * Sets bits that are set in this object AND also in one or more of the other bitsets.
+     * Stores result into this object.
+     *
+     * @param bitSetNames name of stored bitsets
+     * @return length in bytes of the destination key
+     */
+    Mono<Long> andOr(String... bitSetNames);
+
+    /**
+     * Executes bitwise ONE operation over this object and specified bitsets.
+     * Sets bits that are set in exactly one of the provided bitsets.
+     * Stores result into this object.
+     *
+     * @param bitSetNames name of stored bitsets
+     * @return length in bytes of the destination key
+     */
+    Mono<Long> setExclusive(String... bitSetNames);
 
 }

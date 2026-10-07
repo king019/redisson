@@ -1,5 +1,5 @@
 /**
- * Copyright (c) 2013-2019 Nikita Koksharov
+ * Copyright (c) 2013-2026 Nikita Koksharov
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -15,27 +15,22 @@
  */
 package org.redisson.transaction;
 
+import org.redisson.RedissonMapCache;
+import org.redisson.ScanResult;
+import org.redisson.api.*;
+import org.redisson.api.mapreduce.RMapReduce;
+import org.redisson.client.RedisClient;
+import org.redisson.client.codec.Codec;
+import org.redisson.command.CommandAsyncExecutor;
+import org.redisson.transaction.operation.TransactionalOperation;
+
+import java.time.Duration;
 import java.util.Collection;
-import java.util.Date;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
-
-import org.redisson.RedissonMapCache;
-import org.redisson.api.RCountDownLatch;
-import org.redisson.api.RFuture;
-import org.redisson.api.RLock;
-import org.redisson.api.RPermitExpirableSemaphore;
-import org.redisson.api.RReadWriteLock;
-import org.redisson.api.RSemaphore;
-import org.redisson.api.mapreduce.RMapReduce;
-import org.redisson.client.RedisClient;
-import org.redisson.client.codec.Codec;
-import org.redisson.client.protocol.decoder.MapScanResult;
-import org.redisson.command.CommandAsyncExecutor;
-import org.redisson.transaction.operation.TransactionalOperation;
 
 /**
  * 
@@ -51,38 +46,83 @@ public class RedissonTransactionalMapCache<K, V> extends RedissonMapCache<K, V> 
     
     public RedissonTransactionalMapCache(CommandAsyncExecutor commandExecutor, String name, 
             List<TransactionalOperation> operations, long timeout, AtomicBoolean executed, String transactionId) {
-        super(null, commandExecutor, name, null, null);
+        super(null, commandExecutor, name, null, null, null);
         this.executed = executed;
-        RedissonMapCache<K, V> innerMap = new RedissonMapCache<K, V>(null, commandExecutor, name, null, null);
+        RedissonMapCache<K, V> innerMap = new RedissonMapCache<K, V>(null, commandExecutor, name, null, null, null);
         this.transactionalMap = new BaseTransactionalMapCache<K, V>(commandExecutor, timeout, operations, innerMap, transactionId);
     }
 
     public RedissonTransactionalMapCache(Codec codec, CommandAsyncExecutor commandExecutor, String name,
             List<TransactionalOperation> operations, long timeout, AtomicBoolean executed, String transactionId) {
-        super(codec, null, commandExecutor, name, null, null);
+        super(codec, null, commandExecutor, name, null, null, null);
         this.executed = executed;
-        RedissonMapCache<K, V> innerMap = new RedissonMapCache<K, V>(codec, null, commandExecutor, name, null, null);
+        RedissonMapCache<K, V> innerMap = new RedissonMapCache<K, V>(codec, null, commandExecutor, name, null, null, null);
         this.transactionalMap = new BaseTransactionalMapCache<K, V>(commandExecutor, timeout, operations, innerMap, transactionId);
     }
-    
+
     @Override
-    public RFuture<Boolean> expireAsync(long timeToLive, TimeUnit timeUnit) {
-        throw new UnsupportedOperationException("expire method is not supported in transaction");
+    public LeaseGetResult<V> getWithLease(K key, Duration leaseTimeToLive) {
+        throw new UnsupportedOperationException("getWithLease method is not supported in transaction");
+    }
+
+    @Override
+    public RFuture<LeaseGetResult<V>> getWithLeaseAsync(K key, Duration leaseTimeToLive) {
+        throw new UnsupportedOperationException("getWithLeaseAsync method is not supported in transaction");
+    }
+
+    @Override
+    public boolean removeWithLease(K key) {
+        throw new UnsupportedOperationException("removeWithLease method is not supported in transaction");
+    }
+
+    @Override
+    public RFuture<Boolean> removeWithLeaseAsync(K key) {
+        throw new UnsupportedOperationException("removeWithLeaseAsync method is not supported in transaction");
+    }
+
+    @Override
+    public boolean putWithLease(K key, V value, String leaseToken) {
+        throw new UnsupportedOperationException("putWithLease method is not supported in transaction");
+    }
+
+    @Override
+    public RFuture<Boolean> putWithLeaseAsync(K key, V value, String leaseToken) {
+        throw new UnsupportedOperationException("putWithLease method is not supported in transaction");
+    }
+
+    @Override
+    public boolean putWithLease(K key, V value, Duration ttl, String leaseToken) {
+        throw new UnsupportedOperationException("putWithLease method is not supported in transaction");
+    }
+
+    @Override
+    public RFuture<Boolean> putWithLeaseAsync(K key, V value, Duration ttl, String leaseToken) {
+        throw new UnsupportedOperationException("putWithLease method is not supported in transaction");
+    }
+
+    @Override
+    public boolean putWithLease(K key, V value, Duration ttl, Duration maxIdleTime, String leaseToken) {
+        throw new UnsupportedOperationException("putWithLease method is not supported in transaction");
+    }
+
+    @Override
+    public RFuture<Boolean> putWithLeaseAsync(K key, V value, Duration ttl, Duration maxIdleTime, String leaseToken) {
+        throw new UnsupportedOperationException("putWithLease method is not supported in transaction");
     }
     
     @Override
-    public RFuture<Boolean> expireAtAsync(Date timestamp) {
-        throw new UnsupportedOperationException("expireAt method is not supported in transaction");
+    public RFuture<Boolean> expireAsync(long timeToLive, TimeUnit timeUnit, String param, String... keys) {
+        return transactionalMap.expireAsync(timeToLive, timeUnit, param, keys);
     }
     
     @Override
-    public RFuture<Boolean> expireAtAsync(long timestamp) {
-        throw new UnsupportedOperationException("expireAt method is not supported in transaction");
+    protected RFuture<Boolean> expireAtAsync(long timestamp, String param, String... keys) {
+        return transactionalMap.expireAtAsync(timestamp, param, keys);
     }
-    
+
     @Override
     public RFuture<Boolean> clearExpireAsync() {
-        throw new UnsupportedOperationException("clearExpire method is not supported in transaction");
+        return transactionalMap.clearExpireAsync();
     }
     
     @Override
@@ -129,8 +169,8 @@ public class RedissonTransactionalMapCache<K, V> extends RedissonMapCache<K, V> 
     }
     
     @Override
-    public RFuture<V> putOperationAsync(K key, V value, long ttlTimeout, long maxIdleTimeout, long maxIdleDelta) {
-        return transactionalMap.putOperationAsync(key, value, ttlTimeout, maxIdleTimeout, maxIdleDelta);
+    public RFuture<V> putOperationAsync(K key, V value, long ttlTimeout, long maxIdleTimeout, long maxIdleDelta, long ttlTimeoutDelta) {
+        return transactionalMap.putOperationAsync(key, value, ttlTimeout, maxIdleTimeout, maxIdleDelta, ttlTimeoutDelta);
     }
     
     public RFuture<Boolean> fastPutIfAbsentAsync(final K key, final V value, long ttl, TimeUnit ttlUnit, long maxIdleTime, TimeUnit maxIdleUnit) {
@@ -158,8 +198,8 @@ public class RedissonTransactionalMapCache<K, V> extends RedissonMapCache<K, V> 
     }
     
     @Override
-    public MapScanResult<Object, Object> scanIterator(String name, RedisClient client,
-            long startPos, String pattern, int count) {
+    public ScanResult<Entry<Object, Object>> scanIterator(String name, RedisClient client,
+                                                          String startPos, String pattern, int count) {
         checkState();
         return transactionalMap.scanIterator(name, client, startPos, pattern, count);
     }
@@ -181,7 +221,19 @@ public class RedissonTransactionalMapCache<K, V> extends RedissonMapCache<K, V> 
         checkState();
         return transactionalMap.addAndGetOperationAsync(key, value);
     }
-    
+
+    @Override
+    protected RFuture<Boolean> fastPutIfExistsOperationAsync(K key, V value) {
+        checkState();
+        return transactionalMap.fastPutIfExistsOperationAsync(key, value);
+    }
+
+    @Override
+    protected RFuture<V> putIfExistsOperationAsync(K key, V value) {
+        checkState();
+        return transactionalMap.putIfExistsOperationAsync(key, value);
+    }
+
     @Override
     protected RFuture<V> putIfAbsentOperationAsync(K key, V value) {
         checkState();
@@ -329,6 +381,12 @@ public class RedissonTransactionalMapCache<K, V> extends RedissonMapCache<K, V> 
     @Override
     public RReadWriteLock getReadWriteLock(K key) {
         throw new UnsupportedOperationException("getReadWriteLock method is not supported in transaction");
+    }
+
+    @Override
+    public Set<K> keySet(String pattern, int count) {
+        checkState();
+        return transactionalMap.keySet(pattern, count);
     }
 
 }

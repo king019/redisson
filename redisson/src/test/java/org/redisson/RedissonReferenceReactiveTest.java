@@ -1,11 +1,9 @@
 package org.redisson;
 
-import static org.junit.Assert.assertEquals;
-import static org.junit.Assert.assertTrue;
-
 import java.util.List;
 
-import org.junit.Test;
+import org.junit.jupiter.api.Assertions;
+import org.junit.jupiter.api.Test;
 import org.redisson.api.BatchOptions;
 import org.redisson.api.RBatch;
 import org.redisson.api.RBatchReactive;
@@ -16,6 +14,7 @@ import org.redisson.api.RSetReactive;
 import org.redisson.api.RedissonClient;
 import org.redisson.api.RedissonReactiveClient;
 import org.redisson.codec.JsonJacksonCodec;
+import org.redisson.codec.Kryo5Codec;
 import org.redisson.config.Config;
 
 import com.fasterxml.jackson.databind.DeserializationFeature;
@@ -34,13 +33,13 @@ public class RedissonReferenceReactiveTest extends BaseReactiveTest {
         RBucketReactive<Object> b3 = redisson.getBucket("b3");
         sync(b2.set(b3));
         sync(b1.set(redisson.getBucket("b2")));
-        assertTrue(sync(b1.get()) instanceof RBucketReactive);
-        assertEquals("b3", ((RBucketReactive) sync(((RBucketReactive) sync(b1.get())).get())).getName());
+        Assertions.assertTrue(sync(b1.get()) instanceof RBucketReactive);
+        Assertions.assertEquals("b3", ((RBucketReactive) sync(((RBucketReactive) sync(b1.get())).get())).getName());
         RBucketReactive<Object> b4 = redisson.getBucket("b4");
         sync(b4.set(redisson.getMapCache("testCache")));
-        assertTrue(sync(b4.get()) instanceof RMapCacheReactive);
+        Assertions.assertTrue(sync(b4.get()) instanceof RMapCacheReactive);
         sync(((RMapCacheReactive) sync(b4.get())).fastPut(b1, b2));
-        assertEquals("b2", ((RBucketReactive) sync(((RMapCacheReactive) sync(b4.get())).get(b1))).getName());
+        Assertions.assertEquals("b2", ((RBucketReactive) sync(((RMapCacheReactive) sync(b4.get())).get(b1))).getName());
     }
 
     @Test
@@ -58,10 +57,10 @@ public class RedissonReferenceReactiveTest extends BaseReactiveTest {
         batch.getBucket("b1").get();
         batch.getBucket("b2").get();
         batch.getBucket("b3").get();
-        List<RBucketReactive> result = (List<RBucketReactive>) sync(batch.execute());
-        assertEquals("b2", result.get(0).getName());
-        assertEquals("b3", result.get(1).getName());
-        assertEquals("b1", result.get(2).getName());
+        List<RBucketReactive> result = (List<RBucketReactive>) sync(batch.execute()).getResponses();
+        Assertions.assertEquals("b2", result.get(0).getName());
+        Assertions.assertEquals("b3", result.get(1).getName());
+        Assertions.assertEquals("b1", result.get(2).getName());
     }
 
     @Test
@@ -80,43 +79,34 @@ public class RedissonReferenceReactiveTest extends BaseReactiveTest {
         b.getBucket("b1").getAsync();
         b.getBucket("b2").getAsync();
         b.getBucket("b3").getAsync();
-        List<RBucket> result = (List<RBucket>)b.execute();
-        assertEquals("b2", result.get(0).getName());
-        assertEquals("b3", result.get(1).getName());
-        assertEquals("b1", result.get(2).getName());
+        List<RBucket> result = (List<RBucket>)b.execute().getResponses();
+        Assertions.assertEquals("b2", result.get(0).getName());
+        Assertions.assertEquals("b3", result.get(1).getName());
+        Assertions.assertEquals("b1", result.get(2).getName());
 
         lredisson.shutdown();
     }
 
     @Test
-    public void shouldUseDefaultCodec() throws Exception {
-        ObjectMapper objectMapper = new ObjectMapper();
-        objectMapper.configure(DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES, true);
-        objectMapper.configure(DeserializationFeature.UNWRAP_ROOT_VALUE, false);
-        JsonJacksonCodec codec = new JsonJacksonCodec(objectMapper);
+    public void shouldUseDefaultCodec() {
+        Kryo5Codec codec = new Kryo5Codec();
 
-        Config config = new Config();
+        Config config = createConfig();
         config.setCodec(codec);
-        config.useSingleServer()
-                .setAddress(RedisRunner.getDefaultRedisServerBindAddressAndPort());
 
-        RedissonReactiveClient reactive = Redisson.createReactive(config);
+        RedissonReactiveClient reactive = Redisson.create(config).reactive();
         RBucketReactive<Object> b1 = reactive.getBucket("b1");
         sync(b1.set(new MyObject()));
         RSetReactive<Object> s1 = reactive.getSet("s1");
-        assertTrue(sync(s1.add(b1)));
-        assertTrue(codec == b1.getCodec());
+        Assertions.assertTrue(sync(s1.add(b1)));
+        Assertions.assertTrue(codec == b1.getCodec());
 
-        Config config1 = new Config();
-        config1.setCodec(codec);
-        config1.useSingleServer()
-                .setAddress(RedisRunner.getDefaultRedisServerBindAddressAndPort());
-        RedissonReactiveClient reactive1 = Redisson.createReactive(config1);
+        RedissonReactiveClient reactive1 = Redisson.create(config).reactive();
 
         RSetReactive<RBucketReactive> s2 = reactive1.getSet("s1");
         RBucketReactive<MyObject> b2 = sync(s2.iterator(1));
-        assertTrue(codec == b2.getCodec());
-        assertTrue(sync(b2.get()) instanceof MyObject);
+        Assertions.assertTrue(codec == b2.getCodec());
+        Assertions.assertTrue(sync(b2.get()) instanceof MyObject);
         reactive.shutdown();
         reactive1.shutdown();
     }

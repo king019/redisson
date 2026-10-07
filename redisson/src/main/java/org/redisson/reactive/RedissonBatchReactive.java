@@ -1,5 +1,5 @@
 /**
- * Copyright (c) 2013-2019 Nikita Koksharov
+ * Copyright (c) 2013-2026 Nikita Koksharov
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -15,64 +15,12 @@
  */
 package org.redisson.reactive;
 
-import java.util.concurrent.TimeUnit;
-
-import org.redisson.RedissonAtomicDouble;
-import org.redisson.RedissonAtomicLong;
-import org.redisson.RedissonBitSet;
-import org.redisson.RedissonBlockingDeque;
-import org.redisson.RedissonBlockingQueue;
-import org.redisson.RedissonBucket;
-import org.redisson.RedissonDeque;
-import org.redisson.RedissonGeo;
-import org.redisson.RedissonHyperLogLog;
-import org.redisson.RedissonKeys;
-import org.redisson.RedissonLexSortedSet;
-import org.redisson.RedissonList;
-import org.redisson.RedissonListMultimap;
-import org.redisson.RedissonMap;
-import org.redisson.RedissonMapCache;
-import org.redisson.RedissonQueue;
-import org.redisson.RedissonScoredSortedSet;
-import org.redisson.RedissonScript;
-import org.redisson.RedissonSet;
-import org.redisson.RedissonSetCache;
-import org.redisson.RedissonSetMultimap;
-import org.redisson.RedissonStream;
-import org.redisson.RedissonTopic;
-import org.redisson.api.BatchOptions;
-import org.redisson.api.BatchResult;
-import org.redisson.api.RAtomicDoubleReactive;
-import org.redisson.api.RAtomicLongReactive;
-import org.redisson.api.RBatchReactive;
-import org.redisson.api.RBitSetReactive;
-import org.redisson.api.RBlockingDequeReactive;
-import org.redisson.api.RBlockingQueueReactive;
-import org.redisson.api.RBucketReactive;
-import org.redisson.api.RDequeReactive;
-import org.redisson.api.RGeoReactive;
-import org.redisson.api.RHyperLogLogReactive;
-import org.redisson.api.RKeysReactive;
-import org.redisson.api.RLexSortedSetReactive;
-import org.redisson.api.RListMultimapReactive;
-import org.redisson.api.RListReactive;
-import org.redisson.api.RMapCache;
-import org.redisson.api.RMapCacheReactive;
-import org.redisson.api.RMapReactive;
-import org.redisson.api.RQueueReactive;
-import org.redisson.api.RScoredSortedSetReactive;
-import org.redisson.api.RScriptReactive;
-import org.redisson.api.RSetCache;
-import org.redisson.api.RSetCacheReactive;
-import org.redisson.api.RSetMultimapReactive;
-import org.redisson.api.RSetReactive;
-import org.redisson.api.RStreamReactive;
-import org.redisson.api.RTopicReactive;
-import org.redisson.api.RedissonReactiveClient;
+import org.redisson.*;
+import org.redisson.api.*;
 import org.redisson.client.codec.Codec;
+import org.redisson.codec.JsonCodec;
 import org.redisson.connection.ConnectionManager;
 import org.redisson.eviction.EvictionScheduler;
-
 import reactor.core.publisher.Mono;
 
 /**
@@ -84,24 +32,34 @@ public class RedissonBatchReactive implements RBatchReactive {
 
     private final EvictionScheduler evictionScheduler;
     private final CommandReactiveBatchService executorService;
-    private final BatchOptions options;
-    private final CommandReactiveService commandExecutor;
+    private final CommandReactiveExecutor commandExecutor;
 
-    public RedissonBatchReactive(EvictionScheduler evictionScheduler, ConnectionManager connectionManager, CommandReactiveService commandExecutor, BatchOptions options) {
+    public RedissonBatchReactive(EvictionScheduler evictionScheduler, ConnectionManager connectionManager, CommandReactiveExecutor commandExecutor, BatchOptions options) {
         this.evictionScheduler = evictionScheduler;
-        this.executorService = new CommandReactiveBatchService(connectionManager, options);
+        this.executorService = new CommandReactiveBatchService(connectionManager, commandExecutor, options);
         this.commandExecutor = commandExecutor;
-        this.options = options;
+    }
+
+    @Override
+    public <V> RArrayReactive<V> getArray(String name) {
+        return ReactiveProxyBuilder.create(executorService, new RedissonArray<V>(executorService, name), RArrayReactive.class);
+    }
+
+    @Override
+    public <V> RArrayReactive<V> getArray(String name, Codec codec) {
+        return ReactiveProxyBuilder.create(executorService, new RedissonArray<V>(codec, executorService, name), RArrayReactive.class);
     }
 
     @Override
     public <K, V> RStreamReactive<K, V> getStream(String name) {
-        return ReactiveProxyBuilder.create(executorService, new RedissonStream<K, V>(executorService, name), RStreamReactive.class);
+        RedissonStream<K, V> stream = new RedissonStream<K, V>(executorService, name);
+        return ReactiveProxyBuilder.create(executorService, stream, RStreamReactive.class);
     }
 
     @Override
     public <K, V> RStreamReactive<K, V> getStream(String name, Codec codec) {
-        return ReactiveProxyBuilder.create(executorService, new RedissonStream<K, V>(codec, executorService, name), RStreamReactive.class);
+        RedissonStream<K, V> stream = new RedissonStream<K, V>(codec, executorService, name);
+        return ReactiveProxyBuilder.create(executorService, stream, RStreamReactive.class);
     }
     
     @Override
@@ -112,6 +70,11 @@ public class RedissonBatchReactive implements RBatchReactive {
     @Override
     public <V> RBucketReactive<V> getBucket(String name, Codec codec) {
         return ReactiveProxyBuilder.create(executorService, new RedissonBucket<V>(codec, executorService, name), RBucketReactive.class);
+    }
+
+    @Override
+    public <V> RJsonBucketReactive<V> getJsonBucket(String name, JsonCodec codec) {
+        return ReactiveProxyBuilder.create(executorService, new RedissonJsonBucket<>(codec, executorService, name), RJsonBucketReactive.class);
     }
 
     @Override
@@ -138,30 +101,72 @@ public class RedissonBatchReactive implements RBatchReactive {
 
     @Override
     public <K, V> RMapReactive<K, V> getMap(String name) {
-        RedissonMap<K, V> map = new RedissonMap<K, V>(executorService, name, null, null);
-        return ReactiveProxyBuilder.create(executorService, map, 
-                new RedissonMapReactive<K, V>(map, null), RMapReactive.class);
+        RMap<K, V> map = new RedissonMap<K, V>(executorService, name, null, null, null);
+        return ReactiveProxyBuilder.create(executorService, map,
+                new RedissonMapReactive<>(map, executorService), RMapReactive.class);
     }
 
     @Override
     public <K, V> RMapReactive<K, V> getMap(String name, Codec codec) {
-        RedissonMap<K, V> map = new RedissonMap<K, V>(codec, executorService, name, null, null);
-        return ReactiveProxyBuilder.create(executorService, map, 
-                new RedissonMapReactive<K, V>(map, null), RMapReactive.class);
+        RedissonMap<K, V> map = new RedissonMap<>(codec, executorService, name, null, null, null);
+        return ReactiveProxyBuilder.create(executorService, map,
+                new RedissonMapReactive<>(map, executorService), RMapReactive.class);
     }
 
     @Override
     public <K, V> RMapCacheReactive<K, V> getMapCache(String name, Codec codec) {
-        RMapCache<K, V> map = new RedissonMapCache<K, V>(codec, evictionScheduler, executorService, name, null, null);
+        RMapCache<K, V> map = new RedissonMapCache<K, V>(codec, evictionScheduler, executorService, name, null, null, null);
         return ReactiveProxyBuilder.create(executorService, map, 
-                new RedissonMapCacheReactive<K, V>(map), RMapCacheReactive.class);
+                new RedissonMapCacheReactive<K, V>(map, commandExecutor), RMapCacheReactive.class);
     }
 
     @Override
     public <K, V> RMapCacheReactive<K, V> getMapCache(String name) {
-        RMapCache<K, V> map = new RedissonMapCache<K, V>(evictionScheduler, executorService, name, null, null);
+        RMapCache<K, V> map = new RedissonMapCache<K, V>(evictionScheduler, executorService, name, null, null, null);
         return ReactiveProxyBuilder.create(executorService, map, 
-                new RedissonMapCacheReactive<K, V>(map), RMapCacheReactive.class);
+                new RedissonMapCacheReactive<K, V>(map, commandExecutor), RMapCacheReactive.class);
+    }
+
+    @Override
+    public <K, V> RMapCacheNativeReactive<K, V> getMapCacheNative(String name) {
+        RMap<K, V> map = new RedissonMapCacheNative<>(executorService, name, null, null, null);
+        return ReactiveProxyBuilder.create(executorService, map,
+                new RedissonMapCacheReactive<K, V>(map, commandExecutor), RMapCacheNativeReactive.class);
+    }
+
+    @Override
+    public <K, V> RMapCacheNativeReactive<K, V> getMapCacheNative(String name, Codec codec) {
+        RMap<K, V> map = new RedissonMapCacheNative<>(codec, executorService, name, null, null, null);
+        return ReactiveProxyBuilder.create(executorService, map,
+                new RedissonMapCacheReactive<K, V>(map, commandExecutor), RMapCacheNativeReactive.class);
+    }
+
+    @Override
+    public <K, V> RListMultimapCacheReactive<K, V> getListMultimapCacheNative(String name) {
+        RListMultimap<K, V> map = new RedissonListMultimapCacheNative<>(executorService, name);
+        return ReactiveProxyBuilder.create(executorService, map,
+                new RedissonListMultimapCacheReactive<>(map, executorService), RListMultimapCacheReactive.class);
+    }
+
+    @Override
+    public <K, V> RListMultimapCacheReactive<K, V> getListMultimapCacheNative(String name, Codec codec) {
+        RListMultimap<K, V> map = new RedissonListMultimapCacheNative<>(codec, executorService, name);
+        return ReactiveProxyBuilder.create(executorService, map,
+                new RedissonListMultimapCacheReactive<>(map, executorService), RListMultimapCacheReactive.class);
+    }
+
+    @Override
+    public <K, V> RSetMultimapCacheReactive<K, V> getSetMultimapCacheNative(String name) {
+        RSetMultimap<K, V> map = new RedissonSetMultimapCacheNative<>(executorService, name);
+        return ReactiveProxyBuilder.create(executorService, map,
+                new RedissonSetMultimapCacheReactive<>(map, executorService, null), RSetMultimapCacheReactive.class);
+    }
+
+    @Override
+    public <K, V> RSetMultimapCacheReactive<K, V> getSetMultimapCacheNative(String name, Codec codec) {
+        RSetMultimap<K, V> map = new RedissonSetMultimapCacheNative<>(codec, executorService, name);
+        return ReactiveProxyBuilder.create(executorService, map,
+                new RedissonSetMultimapCacheReactive<>(map, executorService, null), RSetMultimapCacheReactive.class);
     }
 
     @Override
@@ -186,6 +191,16 @@ public class RedissonBatchReactive implements RBatchReactive {
     @Override
     public RTopicReactive getTopic(String name, Codec codec) {
         return ReactiveProxyBuilder.create(executorService, new RedissonTopic(codec, executorService, name), RTopicReactive.class);
+    }
+
+    @Override
+    public RShardedTopicReactive getShardedTopic(String name) {
+        return ReactiveProxyBuilder.create(executorService, new RedissonShardedTopic(executorService, name), RShardedTopicReactive.class);
+    }
+
+    @Override
+    public RShardedTopicReactive getShardedTopic(String name, Codec codec) {
+        return ReactiveProxyBuilder.create(executorService, new RedissonShardedTopic(codec, executorService, name), RShardedTopicReactive.class);
     }
 
     @Override
@@ -279,52 +294,38 @@ public class RedissonBatchReactive implements RBatchReactive {
     }
 
     @Override
+    public RFunctionReactive getFunction() {
+        return ReactiveProxyBuilder.create(executorService, new RedissonFuction(executorService), RFunctionReactive.class);
+    }
+
+    @Override
+    public RFunctionReactive getFunction(Codec codec) {
+        return ReactiveProxyBuilder.create(executorService, new RedissonFuction(executorService, codec), RFunctionReactive.class);
+    }
+
+    @Override
     public RKeysReactive getKeys() {
         return ReactiveProxyBuilder.create(executorService, new RedissonKeys(executorService), new RedissonKeysReactive(executorService), RKeysReactive.class);
     }
 
     @Override
+    public RSearchReactive getSearch() {
+        return ReactiveProxyBuilder.create(executorService, new RedissonSearch(executorService), RSearchReactive.class);
+    }
+
+    @Override
+    public RSearchReactive getSearch(Codec codec) {
+        return ReactiveProxyBuilder.create(executorService, new RedissonSearch(codec, executorService), RSearchReactive.class);
+    }
+
+    @Override
     public Mono<BatchResult<?>> execute() {
-        return commandExecutor.reactive(() -> executorService.executeAsync(options));
+        return commandExecutor.reactive(() -> executorService.executeAsync());
     }
 
-    public RBatchReactive atomic() {
-        options.atomic();
-        return this;
-    }
-    
     @Override
-    public RBatchReactive syncSlaves(int slaves, long timeout, TimeUnit unit) {
-        options.syncSlaves(slaves, timeout, unit);
-        return this;
-    }
-    
-    @Override
-    public RBatchReactive skipResult() {
-        options.skipResult();
-        return this;
-    }
-    
-    @Override
-    public RBatchReactive retryAttempts(int retryAttempts) {
-        options.retryAttempts(retryAttempts);
-        return this;
-    }
-    
-    @Override
-    public RBatchReactive retryInterval(long retryInterval, TimeUnit unit) {
-        options.retryInterval(retryInterval, unit);
-        return this;
-    }
-    
-    @Override
-    public RBatchReactive timeout(long timeout, TimeUnit unit) {
-        options.responseTimeout(timeout, unit);
-        return this;
-    }
-
-    public void enableRedissonReferenceSupport(RedissonReactiveClient redissonReactive) {
-        this.executorService.enableRedissonReferenceSupport(redissonReactive);
+    public Mono<Void> discard() {
+        return commandExecutor.reactive(() -> executorService.discardAsync());
     }
 
     @Override
@@ -352,6 +353,20 @@ public class RedissonBatchReactive implements RBatchReactive {
     }
 
     @Override
+    public <K, V> RSetMultimapCacheReactive<K, V> getSetMultimapCache(String name) {
+        RSetMultimap<K, V> map = new RedissonSetMultimapCache<>(evictionScheduler, executorService, name);
+        return ReactiveProxyBuilder.create(executorService, map,
+                new RedissonSetMultimapCacheReactive<>(map, executorService, null), RSetMultimapCacheReactive.class);
+    }
+
+    @Override
+    public <K, V> RSetMultimapCacheReactive<K, V> getSetMultimapCache(String name, Codec codec) {
+        RSetMultimap<K, V> map = new RedissonSetMultimapCache<>(evictionScheduler, codec, executorService, name);
+        return ReactiveProxyBuilder.create(executorService, map,
+                new RedissonSetMultimapCacheReactive<>(map, executorService, null), RSetMultimapCacheReactive.class);
+    }
+
+    @Override
     public <K, V> RListMultimapReactive<K, V> getListMultimap(String name) {
         return ReactiveProxyBuilder.create(executorService, new RedissonListMultimap<K, V>(executorService, name), 
                 new RedissonListMultimapReactive<K, V>(executorService, name), RListMultimapReactive.class);
@@ -361,6 +376,20 @@ public class RedissonBatchReactive implements RBatchReactive {
     public <K, V> RListMultimapReactive<K, V> getListMultimap(String name, Codec codec) {
         return ReactiveProxyBuilder.create(executorService, new RedissonListMultimap<K, V>(codec, executorService, name), 
                 new RedissonListMultimapReactive<K, V>(codec, executorService, name), RListMultimapReactive.class);
+    }
+
+    @Override
+    public <K, V> RListMultimapReactive<K, V> getListMultimapCache(String name) {
+        RListMultimap<K, V> map = new RedissonListMultimapCache<>(evictionScheduler, executorService, name);
+        return ReactiveProxyBuilder.create(executorService, map,
+                new RedissonListMultimapCacheReactive<>(map, executorService), RListMultimapReactive.class);
+    }
+
+    @Override
+    public <K, V> RListMultimapReactive<K, V> getListMultimapCache(String name, Codec codec) {
+        RListMultimap<K, V> map = new RedissonListMultimapCache<>(evictionScheduler, codec, executorService, name);
+        return ReactiveProxyBuilder.create(executorService, map,
+                new RedissonListMultimapCacheReactive<>(map, executorService), RListMultimapReactive.class);
     }
 
     @Override
@@ -378,6 +407,74 @@ public class RedissonBatchReactive implements RBatchReactive {
     public <V> RBlockingDequeReactive<V> getBlockingDeque(String name, Codec codec) {
         return ReactiveProxyBuilder.create(executorService, new RedissonBlockingDeque<V>(codec, executorService, name, null), 
                 new RedissonListReactive<V>(codec, executorService, name), RBlockingDequeReactive.class);
+    }
+
+    @Override
+    public RTimeSeriesNativeReactive getTimeSeriesNative(String name) {
+        return ReactiveProxyBuilder.create(executorService,
+                new RedissonTimeSeriesNative(executorService, name), RTimeSeriesNativeReactive.class);
+    }
+
+    @Override
+    public <T> RBloomFilterNativeReactive<T> getBloomFilterNative(String name) {
+        return ReactiveProxyBuilder.create(executorService,
+                new RedissonBloomFilterNative<>(executorService, name), RBloomFilterNativeReactive.class);
+    }
+
+    @Override
+    public <T> RBloomFilterNativeReactive<T> getBloomFilterNative(String name, Codec codec) {
+        return ReactiveProxyBuilder.create(executorService,
+                new RedissonBloomFilterNative<>(codec, executorService, name), RBloomFilterNativeReactive.class);
+    }
+
+    @Override
+    public <V> RCuckooFilterReactive<V> getCuckooFilter(String name) {
+        return getCuckooFilter(name, null);
+    }
+
+    @Override
+    public <V> RCuckooFilterReactive<V> getCuckooFilter(String name, Codec codec) {
+        return ReactiveProxyBuilder.create(executorService,
+                new RedissonCuckooFilter<V>(codec, executorService, name),
+                RCuckooFilterReactive.class);
+    }
+
+    @Override
+    public RTDigestReactive getTDigest(String name) {
+        return ReactiveProxyBuilder.create(executorService,
+                new RedissonTDigest(executorService, name),
+                RTDigestReactive.class);
+    }
+
+    @Override
+    public <V> RTopKReactive<V> getTopK(String name) {
+        return getTopK(name, null);
+    }
+
+    @Override
+    public <V> RTopKReactive<V> getTopK(String name, Codec codec) {
+        return ReactiveProxyBuilder.create(executorService,
+                new RedissonTopK<V>(codec, executorService, name),
+                RTopKReactive.class);
+    }
+
+    @Override
+    public <V> RCountMinReactive<V> getCountMin(String name) {
+        return getCountMin(name, null);
+    }
+
+    @Override
+    public <V> RCountMinReactive<V> getCountMin(String name, Codec codec) {
+        return ReactiveProxyBuilder.create(executorService,
+                new RedissonCountMin<V>(codec, executorService, name),
+                RCountMinReactive.class);
+    }
+
+    @Override
+    public RVectorSetReactive getVectorSet(String name) {
+        return ReactiveProxyBuilder.create(executorService,
+                new RedissonVectorSet(executorService, name),
+                RVectorSetReactive.class);
     }
 
 }

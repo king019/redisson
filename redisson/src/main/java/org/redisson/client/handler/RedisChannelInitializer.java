@@ -1,5 +1,5 @@
 /**
- * Copyright (c) 2013-2019 Nikita Koksharov
+ * Copyright (c) 2013-2026 Nikita Koksharov
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -15,26 +15,6 @@
  */
 package org.redisson.client.handler;
 
-import java.io.IOException;
-import java.io.InputStream;
-import java.lang.reflect.Method;
-import java.security.KeyStore;
-import java.security.KeyStoreException;
-import java.security.NoSuchAlgorithmException;
-import java.security.UnrecoverableKeyException;
-import java.security.cert.CertificateException;
-
-import javax.net.ssl.KeyManagerFactory;
-import javax.net.ssl.SSLEngine;
-import javax.net.ssl.SSLException;
-import javax.net.ssl.SSLParameters;
-import javax.net.ssl.TrustManagerFactory;
-
-import org.redisson.client.RedisClient;
-import org.redisson.client.RedisClientConfig;
-import org.redisson.client.RedisConnection;
-import org.redisson.config.SslProvider;
-
 import io.netty.bootstrap.Bootstrap;
 import io.netty.channel.Channel;
 import io.netty.channel.ChannelHandlerContext;
@@ -47,6 +27,22 @@ import io.netty.handler.ssl.SslHandler;
 import io.netty.handler.ssl.SslHandshakeCompletionEvent;
 import io.netty.handler.ssl.util.InsecureTrustManagerFactory;
 import io.netty.util.NetUtil;
+import org.redisson.client.RedisClient;
+import org.redisson.client.RedisClientConfig;
+import org.redisson.client.RedisConnection;
+import org.redisson.config.SslProvider;
+import org.redisson.config.SslVerificationMode;
+
+import javax.net.ssl.KeyManagerFactory;
+import javax.net.ssl.SSLEngine;
+import javax.net.ssl.SSLParameters;
+import javax.net.ssl.TrustManagerFactory;
+import java.io.IOException;
+import java.io.InputStream;
+import java.security.GeneralSecurityException;
+import java.security.KeyStore;
+import java.security.KeyStoreException;
+import java.util.Arrays;
 
 /**
  * 
@@ -56,7 +52,7 @@ import io.netty.util.NetUtil;
 public class RedisChannelInitializer extends ChannelInitializer<Channel> {
 
     public enum Type {PUBSUB, PLAIN}
-    
+
     private final RedisClientConfig config;
     private final RedisClient redisClient;
     private final Type type;
@@ -74,7 +70,7 @@ public class RedisChannelInitializer extends ChannelInitializer<Channel> {
         } else {
             pingConnectionHandler = null;
         }
-        connectionWatchdog = new ConnectionWatchdog(bootstrap, channels, config.getTimer());
+        connectionWatchdog = new ConnectionWatchdog(bootstrap, channels, config);
     }
     
     @Override
@@ -86,27 +82,35 @@ public class RedisChannelInitializer extends ChannelInitializer<Channel> {
         } else {
             ch.pipeline().addLast(new RedisPubSubConnectionHandler(redisClient));
         }
-        
+
         ch.pipeline().addLast(
             connectionWatchdog,
-            CommandEncoder.INSTANCE,
-            CommandBatchEncoder.INSTANCE,
-            new CommandsQueue());
-        
+            new CommandEncoder(config.getCommandMapper()),
+            CommandBatchEncoder.INSTANCE);
+
+        if (type == Type.PLAIN) {
+            ch.pipeline().addLast(new CommandsQueue());
+        } else {
+            ch.pipeline().addLast(new CommandsQueuePubSub());
+        }
+
         if (pingConnectionHandler != null) {
             ch.pipeline().addLast(pingConnectionHandler);
         }
         
         if (type == Type.PLAIN) {
-            ch.pipeline().addLast(new CommandDecoder(config.getExecutor(), config.isDecodeInExecutor()));
+            ch.pipeline().addLast(new CommandDecoder(config.getAddress().getScheme()));
         } else {
-            ch.pipeline().addLast(new CommandPubSubDecoder(config.getExecutor(), config.isKeepPubSubOrder(), config.isDecodeInExecutor()));
+            ch.pipeline().addLast(new CommandPubSubDecoder(config));
         }
+
+        ch.pipeline().addLast(new ErrorsLoggingHandler());
+
+        config.getNettyHook().afterChannelInitialization(ch);
     }
     
-    private void initSsl(final RedisClientConfig config, Channel ch) throws KeyStoreException, IOException,
-            NoSuchAlgorithmException, CertificateException, SSLException, UnrecoverableKeyException {
-        if (!"rediss".equals(config.getAddress().getScheme())) {
+    private void initSsl(RedisClientConfig config, Channel ch) throws GeneralSecurityException, IOException {
+        if (!config.getAddress().isSsl()) {
             return;
         }
 
@@ -115,11 +119,19 @@ public class RedisChannelInitializer extends ChannelInitializer<Channel> {
             provided = io.netty.handler.ssl.SslProvider.OPENSSL;
         }
         
-        SslContextBuilder sslContextBuilder = SslContextBuilder.forClient().sslProvider(provided);
+        SslContextBuilder sslContextBuilder = SslContextBuilder.forClient()
+                                                    .sslProvider(provided)
+                                                    .keyStoreType(config.getSslKeystoreType());
+
+        sslContextBuilder.protocols(config.getSslProtocols());
+        if (config.getSslCiphers() != null) {
+            sslContextBuilder.ciphers(Arrays.asList(config.getSslCiphers()));
+        }
+
         if (config.getSslTruststore() != null) {
-            KeyStore keyStore = KeyStore.getInstance(KeyStore.getDefaultType());
+            KeyStore keyStore = getKeyStore(config);
             
-            InputStream stream = config.getSslTruststore().toURL().openStream();
+            InputStream stream = config.getSslTruststore().openStream();
             try {
                 char[] password = null;
                 if (config.getSslTruststorePassword() != null) {
@@ -134,11 +146,14 @@ public class RedisChannelInitializer extends ChannelInitializer<Channel> {
             trustManagerFactory.init(keyStore);
             sslContextBuilder.trustManager(trustManagerFactory);
         }
+        if (config.getSslTrustManagerFactory() != null) {
+            sslContextBuilder.trustManager(config.getSslTrustManagerFactory());
+        }
 
         if (config.getSslKeystore() != null){
-            KeyStore keyStore = KeyStore.getInstance(KeyStore.getDefaultType());
+            KeyStore keyStore = getKeyStore(config);
             
-            InputStream stream = config.getSslKeystore().toURL().openStream();
+            InputStream stream = config.getSslKeystore().openStream();
             char[] password = null;
             if (config.getSslKeystorePassword() != null) {
                 password = config.getSslKeystorePassword().toCharArray();
@@ -153,16 +168,16 @@ public class RedisChannelInitializer extends ChannelInitializer<Channel> {
             keyManagerFactory.init(keyStore, password);
             sslContextBuilder.keyManager(keyManagerFactory);
         }
+        if (config.getSslKeyManagerFactory() != null) {
+            sslContextBuilder.keyManager(config.getSslKeyManagerFactory());
+        }
         
         SSLParameters sslParams = new SSLParameters();
-        if (config.isSslEnableEndpointIdentification()) {
-            // TODO remove for JDK 1.7+
-            try {
-                Method method = sslParams.getClass().getDeclaredMethod("setEndpointIdentificationAlgorithm", String.class);
-                method.invoke(sslParams, "HTTPS");
-            } catch (Exception e) {
-                throw new SSLException(e);
-            }
+
+        if (config.getSslVerificationMode() == SslVerificationMode.STRICT) {
+            sslParams.setEndpointIdentificationAlgorithm("HTTPS");
+        } else if (config.getSslVerificationMode() == SslVerificationMode.CA_ONLY) {
+            sslParams.setEndpointIdentificationAlgorithm("");
         } else {
             if (config.getSslTruststore() == null) {
                 sslContextBuilder.trustManager(InsecureTrustManagerFactory.INSTANCE);
@@ -174,7 +189,7 @@ public class RedisChannelInitializer extends ChannelInitializer<Channel> {
         if (hostname == null || NetUtil.createByteArrayFromIpAddressString(hostname) != null) {
             hostname = config.getAddress().getHost();
         }
-        
+
         SSLEngine sslEngine = sslContext.newEngine(ch.alloc(), hostname, config.getAddress().getPort());
         sslEngine.setSSLParameters(sslParams);
         
@@ -193,14 +208,15 @@ public class RedisChannelInitializer extends ChannelInitializer<Channel> {
             
             @Override
             public void userEventTriggered(ChannelHandlerContext ctx, Object evt) throws Exception {
-                if (!sslInitDone && (evt instanceof SslHandshakeCompletionEvent)) {
+                if (!sslInitDone && evt instanceof SslHandshakeCompletionEvent) {
                     SslHandshakeCompletionEvent e = (SslHandshakeCompletionEvent) evt;
                     if (e.isSuccess()) {
                         sslInitDone = true;
                         ctx.fireChannelActive();
                     } else {
                         RedisConnection connection = RedisConnection.getFrom(ctx.channel());
-                        connection.getConnectionPromise().tryFailure(e.cause());
+                        connection.closeAsync();
+                        connection.getConnectionPromise().completeExceptionally(e.cause());
                     }
                 }
 
@@ -209,5 +225,12 @@ public class RedisChannelInitializer extends ChannelInitializer<Channel> {
 
         });
     }
-    
+
+    private KeyStore getKeyStore(RedisClientConfig config) throws KeyStoreException {
+        if (config.getSslKeystoreType() != null) {
+            return KeyStore.getInstance(config.getSslKeystoreType());
+        }
+        return KeyStore.getInstance(KeyStore.getDefaultType());
+    }
+
 }

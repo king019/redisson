@@ -1,5 +1,5 @@
 /**
- * Copyright (c) 2013-2019 Nikita Koksharov
+ * Copyright (c) 2013-2026 Nikita Koksharov
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -18,10 +18,10 @@ package org.redisson.api;
 import java.util.Collection;
 import java.util.List;
 
-import io.reactivex.Completable;
-import io.reactivex.Flowable;
-import io.reactivex.Maybe;
-import io.reactivex.Single;
+import io.reactivex.rxjava3.core.Completable;
+import io.reactivex.rxjava3.core.Flowable;
+import io.reactivex.rxjava3.core.Maybe;
+import io.reactivex.rxjava3.core.Single;
 
 /**
  *  list functions
@@ -39,7 +39,7 @@ public interface RListRx<V> extends RCollectionRx<V>, RSortableRx<List<V>> {
      * @param indexes of elements
      * @return elements
      */
-    Single<List<V>> get(int...indexes);
+    Single<List<V>> get(int... indexes);
     
     /**
      * Add <code>element</code> after <code>elementToFind</code>
@@ -164,5 +164,41 @@ public interface RListRx<V> extends RCollectionRx<V>, RSortableRx<List<V>> {
      * @return void
      */
     Completable fastRemove(int index);
+
+    /**
+     * Returns range of values from 0 index to <code>toIndex</code>. Indexes are zero based. 
+     * <code>-1</code> means the last element, <code>-2</code> means penultimate and so on.
+     * 
+     * @param toIndex - end index
+     * @return elements
+     */
+    Single<List<V>> range(int toIndex);
     
+    /**
+     * Returns range of values from <code>fromIndex</code> to <code>toIndex</code> index including.
+     * Indexes are zero based. <code>-1</code> means the last element, <code>-2</code> means penultimate and so on.
+     * 
+     * @param fromIndex - start index
+     * @param toIndex - end index
+     * @return elements
+     */
+    Single<List<V>> range(int fromIndex, int toIndex);
+
+    /**
+     * Adds object event listener
+     *
+     * @see org.redisson.api.listener.TrackingListener
+     * @see org.redisson.api.ExpiredObjectListener
+     * @see org.redisson.api.DeletedObjectListener
+     * @see org.redisson.api.listener.ListAddListener
+     * @see org.redisson.api.listener.ListInsertListener
+     * @see org.redisson.api.listener.ListSetListener
+     * @see org.redisson.api.listener.ListRemoveListener
+     * @see org.redisson.api.listener.ListTrimListener
+     *
+     * @param listener - object event listener
+     * @return listener id
+     */
+    Single<Integer> addListener(ObjectListener listener);
+
 }

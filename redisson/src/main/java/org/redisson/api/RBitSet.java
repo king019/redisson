@@ -1,5 +1,5 @@
 /**
- * Copyright (c) 2013-2019 Nikita Koksharov
+ * Copyright (c) 2013-2026 Nikita Koksharov
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,6 +16,8 @@
 package org.redisson.api;
 
 import java.util.BitSet;
+import java.util.List;
+import org.redisson.api.bitset.BitFieldArgs;
 
 /**
  * Vector of bits that grows as needed.
@@ -24,6 +26,199 @@ import java.util.BitSet;
  *
  */
 public interface RBitSet extends RExpirable, RBitSetAsync {
+
+    /**
+     * Returns signed number at specified
+     * <code>offset</code> and <code>size</code>
+     *
+     * @param size - size of signed number up to 64 bits
+     * @param offset - offset of signed number
+     * @return signed number
+     */
+    long getSigned(int size, long offset);
+
+    /**
+     * Returns previous value of signed number and replaces it
+     * with defined <code>value</code> at specified <code>offset</code>
+     *
+     * @param size - size of signed number up to 64 bits
+     * @param offset - offset of signed number
+     * @param value - value of signed number
+     * @return previous value of signed number
+     */
+    long setSigned(int size, long offset, long value);
+
+    /**
+     * Increments current signed value by
+     * defined <code>increment</code> value and <code>size</code>
+     * at specified <code>offset</code>
+     * and returns result.
+     *
+     * @param size - size of signed number up to 64 bits
+     * @param offset - offset of signed number
+     * @param increment - increment value
+     * @return result value
+     */
+    long incrementAndGetSigned(int size, long offset, long increment);
+
+    /**
+     * Returns unsigned number at specified
+     * <code>offset</code> and <code>size</code>
+     *
+     * @param size - size of unsigned number up to 64 bits
+     * @param offset - offset of unsigned number
+     * @return unsigned number
+     */
+    long getUnsigned(int size, long offset);
+
+    /**
+     * Returns previous value of unsigned number and replaces it
+     * with defined <code>value</code> at specified <code>offset</code>
+     *
+     * @param size - size of unsigned number up to 64 bits
+     * @param offset - offset of unsigned number
+     * @param value - value of unsigned number
+     * @return previous value of unsigned number
+     */
+    long setUnsigned(int size, long offset, long value);
+
+    /**
+     * Increments current unsigned value by
+     * defined <code>increment</code> value and <code>size</code>
+     * at specified <code>offset</code>
+     * and returns result.
+     *
+     * @param size - size of unsigned number up to 64 bits
+     * @param offset - offset of unsigned number
+     * @param increment - increment value
+     * @return result value
+     */
+    long incrementAndGetUnsigned(int size, long offset, long increment);
+
+    /**
+     * Executes BITFIELD command with multiple subcommands
+     * and returns result list in the same order.
+     * if ReadMode is Slave or one of the availability zone modes
+     * (AZ_AFFINITY, AZ_AFFINITY_SLAVES_AND_MASTER, AZ_AFFINITY_MASTER_SLAVE)
+     * And Args is only get commands,
+     * then BITFIELD_RO command will be executed
+     *
+     * @param args - bitfield arguments
+     * @return result values
+     */
+    List<Long> bitField(BitFieldArgs args);
+
+    /**
+     * Returns byte number at specified <code>offset</code>
+     *
+     * @param offset - offset of number
+     * @return number
+     */
+    byte getByte(long offset);
+
+    /**
+     * Returns previous value of byte number and replaces it
+     * with defined <code>value</code> at specified <code>offset</code>
+     *
+     * @param offset - offset of number
+     * @param value - value of number
+     * @return previous value of number
+     */
+    byte setByte(long offset, byte value);
+
+    /**
+     * Increments current byte value on defined <code>increment</code> value at specified <code>offset</code>
+     * and returns result.
+     *
+     * @param offset - offset of number
+     * @param increment - increment value
+     * @return result value
+     */
+    byte incrementAndGetByte(long offset, byte increment);
+
+    /**
+     * Returns short number at specified <code>offset</code>
+     *
+     * @param offset - offset of number
+     * @return number
+     */
+    short getShort(long offset);
+
+    /**
+     * Returns previous value of short number and replaces it
+     * with defined <code>value</code> at specified <code>offset</code>
+     *
+     * @param offset - offset of number
+     * @param value - value of number
+     * @return previous value of number
+     */
+    short setShort(long offset, short value);
+
+    /**
+     * Increments current short value on defined <code>increment</code> value at specified <code>offset</code>
+     * and returns result.
+     *
+     * @param offset - offset of number
+     * @param increment - increment value
+     * @return result value
+     */
+    short incrementAndGetShort(long offset, short increment);
+
+    /**
+     * Returns integer number at specified <code>offset</code>
+     *
+     * @param offset - offset of number
+     * @return number
+     */
+    int getInteger(long offset);
+
+    /**
+     * Returns previous value of integer number and replaces it
+     * with defined <code>value</code> at specified <code>offset</code>
+     *
+     * @param offset - offset of number
+     * @param value - value of number
+     * @return previous value of number
+     */
+    int setInteger(long offset, int value);
+
+    /**
+     * Increments current integer value on defined <code>increment</code> value at specified <code>offset</code>
+     * and returns result.
+     *
+     * @param offset - offset of number
+     * @param increment - increment value
+     * @return result value
+     */
+    int incrementAndGetInteger(long offset, int increment);
+
+    /**
+     * Returns long number at specified <code>offset</code>
+     *
+     * @param offset - offset of number
+     * @return number
+     */
+    long getLong(long offset);
+
+    /**
+     * Returns previous value of long number and replaces it
+     * with defined <code>value</code> at specified <code>offset</code>
+     *
+     * @param offset - offset of number
+     * @param value - value of number
+     * @return previous value of number
+     */
+    long setLong(long offset, long value);
+
+    /**
+     * Increments current long value on defined <code>increment</code> value at specified <code>offset</code>
+     * and returns result.
+     *
+     * @param offset - offset of number
+     * @param increment - increment value
+     * @return result value
+     */
+    long incrementAndGetLong(long offset, long increment);
 
     /**
      * Returns "logical size" = index of highest set bit plus one.
@@ -60,9 +255,19 @@ public interface RBitSet extends RExpirable, RBitSetAsync {
     void set(BitSet bs);
 
     /**
-     * Executes NOT operation over all bits
+     * Set all bits to <code>value</code> which index in indexArray
+     *
+     * @param indexArray The index array of bits that needs to be set to <code>value</code>
+     * @param value true = 1, false = 0
      */
-    void not();
+    void set(long[] indexArray, boolean value);
+
+    /**
+     * Executes NOT operation over all bits
+     *
+     * @return length in bytes of the destination key
+     */
+    long not();
 
     /**
      * Set all bits to one from <code>fromIndex</code> (inclusive) to <code>toIndex</code> (exclusive)
@@ -87,6 +292,14 @@ public interface RBitSet extends RExpirable, RBitSetAsync {
      * @return <code>true</code> if bit set to one and <code>false</code> overwise.
      */
     boolean get(long bitIndex);
+    
+    /**
+     * Returns a boolean array where each element of the array corresponds to the query result of the input parameters.
+     *
+     * @param bitIndexes indexes of bit
+     * @return Returns a boolean array where each element of the array corresponds to the query result of the input parameters.
+     */
+    boolean[] get(long... bitIndexes);
 
     /**
      * Set bit to one at specified bitIndex
@@ -102,9 +315,11 @@ public interface RBitSet extends RExpirable, RBitSetAsync {
      * 
      * @param bitIndex - index of bit
      * @param value true = 1, false = 0
-     * 
+     * @return <code>true</code> - if previous value was true,
+     * <code>false</code> - if previous value was false
+     *
     */
-    void set(long bitIndex, boolean value);
+    boolean set(long bitIndex, boolean value);
 
     byte[] toByteArray();
 
@@ -136,23 +351,66 @@ public interface RBitSet extends RExpirable, RBitSetAsync {
      * Stores result into this object.
      * 
      * @param bitSetNames - name of stored bitsets
+     * @return length in bytes of the destination key
      */
-    void or(String... bitSetNames);
+    long or(String... bitSetNames);
 
     /**
      * Executes AND operation over this object and specified bitsets.
      * Stores result into this object.
      * 
      * @param bitSetNames - name of stored bitsets
+     * @return length in bytes of the destination key
      */
-    void and(String... bitSetNames);
+    long and(String... bitSetNames);
 
     /**
      * Executes XOR operation over this object and specified bitsets.
      * Stores result into this object.
      * 
      * @param bitSetNames - name of stored bitsets
+     * @return length in bytes of the destination key
      */
-    void xor(String... bitSetNames);
+    long xor(String... bitSetNames);
+
+    /**
+     * Executes bitwise DIFF operation over this object and specified bitsets.
+     * Sets bits that are set in this object but not in any of the other bitsets.
+     * Stores result into this object.
+     *
+     * @param bitSetNames name of stored bitsets
+     * @return length in bytes of the destination key
+     */
+    long diff(String... bitSetNames);
+
+    /**
+     * Executes bitwise DIFF1 operation over this object and specified bitsets.
+     * Sets bits that are set in one or more of the other bitsets but not in this object.
+     * Stores result into this object.
+     *
+     * @param bitSetNames name of stored bitsets
+     * @return length in bytes of the destination key
+     */
+    long diffInverse(String... bitSetNames);
+
+    /**
+     * Executes bitwise ANDOR operation over this object and specified bitsets.
+     * Sets bits that are set in this object AND also in one or more of the other bitsets.
+     * Stores result into this object.
+     *
+     * @param bitSetNames name of stored bitsets
+     * @return length in bytes of the destination key
+     */
+    long andOr(String... bitSetNames);
+
+    /**
+     * Executes bitwise ONE operation over this object and specified bitsets.
+     * Sets bits that are set in exactly one of the provided bitsets.
+     * Stores result into this object.
+     *
+     * @param bitSetNames name of stored bitsets
+     * @return length in bytes of the destination key
+     */
+    long setExclusive(String... bitSetNames);
 
 }

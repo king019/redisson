@@ -1,26 +1,31 @@
 package org.redisson;
 
-import static org.assertj.core.api.Assertions.assertThat;
+import org.awaitility.Awaitility;
+import org.joor.Reflect;
+import org.junit.jupiter.api.Assertions;
+import org.junit.jupiter.api.Test;
+import org.redisson.api.AsyncIterator;
+import org.redisson.api.RSetCache;
+import org.redisson.api.listener.SetAddListener;
+import org.redisson.client.codec.IntegerCodec;
+import org.redisson.eviction.EvictionScheduler;
+import org.redisson.api.RedissonClient;
+import org.redisson.api.listener.SetExpiredListener;
+import org.redisson.config.Config;
+import java.util.concurrent.ConcurrentHashMap;
 
 import java.io.Serializable;
-import java.util.Arrays;
-import java.util.Collections;
-import java.util.HashMap;
-import java.util.HashSet;
-import java.util.Iterator;
-import java.util.Map;
-import java.util.Set;
+import java.time.Duration;
+import java.util.*;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.CompletionStage;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicInteger;
 
-import org.junit.Assert;
-import org.junit.Test;
-import org.redisson.api.RSetCache;
-import org.redisson.eviction.EvictionScheduler;
+import static org.assertj.core.api.Assertions.assertThat;
 
-import mockit.Deencapsulation;
-
-public class RedissonSetCacheTest extends BaseTest {
+public class RedissonSetCacheTest extends RedisDockerTest {
 
     public static class SimpleBean implements Serializable {
 
@@ -35,13 +40,106 @@ public class RedissonSetCacheTest extends BaseTest {
         }
 
     }
-    
+
+    @Test
+    public void testAddIfAbsent() throws InterruptedException {
+        Map<String, Duration> map = new HashMap<>();
+        map.put("200", Duration.ofSeconds(2));
+        RSetCache<String> test = redisson.getSetCache("test");
+        assertThat(test.addAllIfAbsent(map)).isEqualTo(1);
+        assertThat(test.addAllIfAbsent(map)).isZero();
+        assertThat(test.contains("200")).isTrue();
+
+        assertThat(test.addIfAbsent(Duration.ofSeconds(2), "100")).isTrue();
+        assertThat(test.addIfAbsent(Duration.ofSeconds(2), "100")).isFalse();
+        assertThat(test.contains("100")).isTrue();
+
+        Thread.sleep(2000);
+
+        assertThat(test.contains("100")).isFalse();
+        assertThat(test.contains("200")).isFalse();
+
+        assertThat(test.addIfAbsent(Duration.ofSeconds(2), "100")).isTrue();
+        assertThat(test.addAllIfAbsent(map)).isEqualTo(1);
+    }
+
+    @Test
+    public void testAddIfExists() throws InterruptedException {
+        RSetCache<String> cache = redisson.getSetCache("list");
+        cache.add("a", 1, TimeUnit.SECONDS);
+        assertThat(cache.addIfExists(Duration.ofSeconds(2), "a")).isTrue();
+
+        Thread.sleep(1500);
+        assertThat(cache.contains("a")).isTrue();
+        Thread.sleep(700);
+        assertThat(cache.contains("a")).isFalse();
+    }
+
+    @Test
+    public void testAddAll() {
+        RSetCache<String> cache = redisson.getSetCache("list");
+        cache.add("a", 1, TimeUnit.SECONDS);
+        Map<String, Duration> map = new HashMap<>();
+        map.put("a", Duration.ofSeconds(2));
+        map.put("b", Duration.ofSeconds(2));
+        map.put("c", Duration.ofSeconds(2));
+        assertThat(cache.addAll(map)).isEqualTo(2);
+        assertThat(cache.size()).isEqualTo(3);
+    }
+
+    @Test
+    public void testAddAllIfExists() throws InterruptedException {
+        RSetCache<String> cache = redisson.getSetCache("list");
+        Map<String, Duration> map = new HashMap<>();
+        map.put("a", Duration.ofSeconds(2));
+        map.put("b", Duration.ofSeconds(2));
+        map.put("c", Duration.ofSeconds(2));
+        assertThat(cache.addAllIfExist(map)).isZero();
+        assertThat(cache.size()).isZero();
+
+        cache.add("a", 1, TimeUnit.SECONDS);
+        cache.add("b", 1, TimeUnit.SECONDS);
+        assertThat(cache.addAllIfExist(map)).isEqualTo(2);
+        assertThat(cache.contains("c")).isFalse();
+
+        Thread.sleep(1500);
+        assertThat(cache.contains("a")).isTrue();
+        assertThat(cache.contains("b")).isTrue();
+        Thread.sleep(700);
+        assertThat(cache.contains("a")).isFalse();
+        assertThat(cache.contains("b")).isFalse();
+    }
+
+    @Test
+    public void testTryAdd() {
+        RSetCache<String> cache = redisson.getSetCache("list", IntegerCodec.INSTANCE);
+        Set<String> names = new HashSet<>();
+        int elements = 200000;
+        for (int i = 0; i < elements; i++) {
+            names.add("name" + i);
+        }
+
+        boolean s = cache.tryAdd(names.toArray(new String[]{}));
+        assertThat(s).isTrue();
+        assertThat(cache.size()).isEqualTo(elements);
+
+        Set<String> names2 = new HashSet<>();
+        for (int i = elements+1; i < elements + 10000; i++) {
+            names2.add("name" + i);
+        }
+        names2.add("name10");
+
+        boolean r = cache.tryAdd(names2.toArray(new String[]{}));
+        assertThat(r).isFalse();
+        assertThat(cache.size()).isEqualTo(elements);
+    }
+
     @Test
     public void testDestroy() {
         RSetCache<String> cache = redisson.getSetCache("test");
         
         EvictionScheduler evictionScheduler = ((Redisson)redisson).getEvictionScheduler();
-        Map<?, ?> map = Deencapsulation.getField(evictionScheduler, "tasks");
+        Map<?, ?> map = Reflect.on(evictionScheduler).get("tasks");
         assertThat(map.isEmpty()).isFalse();
         cache.destroy();
         assertThat(map.isEmpty()).isTrue();
@@ -90,14 +188,28 @@ public class RedissonSetCacheTest extends BaseTest {
         set.iterator().next();
         set.destroy();
     }
-    
+
+    @Test
+    public void testAddSlowEncodingValue() {
+        Map<Integer, String> map = new HashMap<>();
+        for (int i = 0; i < 80000; i++) {
+            map.put(i, "value" + i);
+        }
+        RSetCache<Map<Integer, String>> set = redisson.getSetCache("simple");
+        assertThat(set.add(map)).isTrue();
+        assertThat(set.contains(map)).isTrue();
+        assertThat(set.size()).isEqualTo(1);
+        assertThat(set.readAll()).containsExactly(map);
+        set.destroy();
+    }
+
     @Test
     public void testAddBean() throws InterruptedException, ExecutionException {
         SimpleBean sb = new SimpleBean();
         sb.setLng(1L);
         RSetCache<SimpleBean> set = redisson.getSetCache("simple");
         assertThat(set.add(sb)).isTrue();
-        Assert.assertEquals(sb.getLng(), set.iterator().next().getLng());
+        Assertions.assertEquals(sb.getLng(), set.iterator().next().getLng());
         set.destroy();
     }
 
@@ -108,9 +220,8 @@ public class RedissonSetCacheTest extends BaseTest {
         assertThat(set).contains("123");
 
         Thread.sleep(500);
-        
-        assertThat(set.size()).isEqualTo(1);
-        assertThat(set).doesNotContain("123");
+
+        assertThat(set.contains("123")).isFalse();
         
         assertThat(set.add("123", 1, TimeUnit.SECONDS)).isTrue();
         set.destroy();
@@ -134,12 +245,12 @@ public class RedissonSetCacheTest extends BaseTest {
         assertThat(set.add("123", 1, TimeUnit.SECONDS)).isTrue();
         Thread.sleep(1000);
 
-        Assert.assertFalse(set.contains("123"));
+        Assertions.assertFalse(set.contains("123"));
 
         assertThat(set.add("4341", 1, TimeUnit.SECONDS)).isTrue();
         Thread.sleep(1000);
 
-        Assert.assertFalse(set.contains("4341"));
+        Assertions.assertFalse(set.contains("4341"));
         set.destroy();
     }
     
@@ -147,10 +258,11 @@ public class RedissonSetCacheTest extends BaseTest {
     public void testAddExpireThenAdd() throws InterruptedException, ExecutionException {
         RSetCache<String> set = redisson.getSetCache("simple31");
         assertThat(set.add("123", 500, TimeUnit.MILLISECONDS)).isTrue();
-        
+        assertThat(set.size()).isEqualTo(1);
+
         Thread.sleep(500);
 
-        assertThat(set.size()).isEqualTo(1);
+        assertThat(set.size()).isZero();
         assertThat(set.contains("123")).isFalse();
 
         assertThat(set.add("123")).isTrue();
@@ -186,17 +298,17 @@ public class RedissonSetCacheTest extends BaseTest {
         set.add(3, 2, TimeUnit.SECONDS);
         set.add(7, 3, TimeUnit.SECONDS);
 
-        Assert.assertTrue(set.remove(1));
-        Assert.assertFalse(set.contains(1));
+        Assertions.assertTrue(set.remove(1));
+        Assertions.assertFalse(set.contains(1));
         assertThat(set).containsOnly(3, 7);
 
-        Assert.assertFalse(set.remove(1));
+        Assertions.assertFalse(set.remove(1));
         assertThat(set).containsOnly(3, 7);
 
-        Assert.assertTrue(set.remove(3));
-        Assert.assertFalse(set.contains(3));
+        Assertions.assertTrue(set.remove(3));
+        Assertions.assertFalse(set.contains(3));
         assertThat(set).containsOnly(7);
-        Assert.assertEquals(1, set.size());
+        Assertions.assertEquals(1, set.size());
         set.destroy();
     }
 
@@ -227,10 +339,10 @@ public class RedissonSetCacheTest extends BaseTest {
             iteration++;
         }
 
-        Assert.assertEquals(2, iteration);
+        Assertions.assertEquals(2, iteration);
 
-        Assert.assertFalse(set.contains("4"));
-        Assert.assertFalse(set.contains("5"));
+        Assertions.assertFalse(set.contains("4"));
+        Assertions.assertFalse(set.contains("5"));
         set.destroy();
     }
 
@@ -238,12 +350,12 @@ public class RedissonSetCacheTest extends BaseTest {
     public void testIteratorSequence() {
         RSetCache<Long> set = redisson.getSetCache("set");
         for (int i = 0; i < 1000; i++) {
-            set.add(Long.valueOf(i));
+            set.add((long) i);
         }
 
         Set<Long> setCopy = new HashSet<Long>();
         for (int i = 0; i < 1000; i++) {
-            setCopy.add(Long.valueOf(i));
+            setCopy.add((long) i);
         }
 
         checkIterator(set, setCopy);
@@ -254,11 +366,39 @@ public class RedissonSetCacheTest extends BaseTest {
         for (Iterator<Long> iterator = set.iterator(); iterator.hasNext();) {
             Long value = iterator.next();
             if (!setCopy.remove(value)) {
-                Assert.fail();
+                Assertions.fail();
             }
         }
 
-        Assert.assertEquals(0, setCopy.size());
+        Assertions.assertEquals(0, setCopy.size());
+    }
+
+    @Test
+    public void testIteratorAsync() {
+        RSetCache<Long> set = redisson.getSetCache("set");
+        for (int i = 0; i < 1000; i++) {
+            set.add((long) i);
+        }
+
+        AsyncIterator<Long> iterator = set.iteratorAsync(5);
+
+        Set<Long> set2 = new HashSet<>();
+        CompletionStage<Void> f = iterateAll(iterator, set2);
+        f.toCompletableFuture().join();
+        Assertions.assertEquals(1000, set2.size());
+    }
+
+    public CompletionStage<Void> iterateAll(AsyncIterator<Long> iterator, Set<Long> set) {
+        return iterator.hasNext().thenCompose(r -> {
+            if (r) {
+                return iterator.next().thenCompose(k -> {
+                    set.add(k);
+                    return iterateAll(iterator, set);
+                });
+            } else {
+                return CompletableFuture.completedFuture(null);
+            }
+        });
     }
 
     @Test
@@ -269,10 +409,10 @@ public class RedissonSetCacheTest extends BaseTest {
             set.add(i*10, 15, TimeUnit.SECONDS);
         }
 
-        Assert.assertTrue(set.retainAll(Arrays.asList(1, 2)));
+        Assertions.assertTrue(set.retainAll(Arrays.asList(1, 2)));
         Thread.sleep(500);
         assertThat(set).containsOnly(1, 2);
-        Assert.assertEquals(2, set.size());
+        Assertions.assertEquals(2, set.size());
         set.destroy();
     }
 
@@ -291,8 +431,8 @@ public class RedissonSetCacheTest extends BaseTest {
             iterator.remove();
             cnt++;
         }
-        Assert.assertEquals(10000, cnt);
-        Assert.assertEquals(0, set.size());
+        Assertions.assertEquals(10000, cnt);
+        Assertions.assertEquals(0, set.size());
         set.destroy();
     }
 
@@ -303,9 +443,9 @@ public class RedissonSetCacheTest extends BaseTest {
             set.add(i);
         }
 
-        Assert.assertTrue(set.containsAll(Collections.emptyList()));
-        Assert.assertTrue(set.containsAll(Arrays.asList(30, 11)));
-        Assert.assertFalse(set.containsAll(Arrays.asList(30, 711, 11)));
+        Assertions.assertTrue(set.containsAll(Collections.emptyList()));
+        Assertions.assertTrue(set.containsAll(Arrays.asList(30, 11)));
+        Assertions.assertFalse(set.containsAll(Arrays.asList(30, 711, 11)));
         set.destroy();
     }
 
@@ -339,9 +479,9 @@ public class RedissonSetCacheTest extends BaseTest {
 
         Thread.sleep(1000);
 
-        Assert.assertFalse(set.contains(new TestObject("2", "3")));
-        Assert.assertTrue(set.contains(new TestObject("1", "2")));
-        Assert.assertFalse(set.contains(new TestObject("1", "9")));
+        Assertions.assertFalse(set.contains(new TestObject("2", "3")));
+        Assertions.assertTrue(set.contains(new TestObject("1", "2")));
+        Assertions.assertFalse(set.contains(new TestObject("1", "9")));
         set.destroy();
     }
 
@@ -355,7 +495,7 @@ public class RedissonSetCacheTest extends BaseTest {
         set.add(new TestObject("3", "4"));
         set.add(new TestObject("5", "6"));
 
-        Assert.assertEquals(4, set.size());
+        Assertions.assertEquals(4, set.size());
         set.destroy();
     }
 
@@ -370,7 +510,7 @@ public class RedissonSetCacheTest extends BaseTest {
         set.add(5);
         set.add(5);
 
-        Assert.assertEquals(5, set.size());
+        Assertions.assertEquals(5, set.size());
         set.destroy();
     }
 
@@ -405,8 +545,8 @@ public class RedissonSetCacheTest extends BaseTest {
         set.add(4);
         set.add(5);
 
-        Assert.assertTrue(set.retainAll(Collections.<Integer>emptyList()));
-        Assert.assertEquals(0, set.size());
+        Assertions.assertTrue(set.retainAll(Collections.<Integer>emptyList()));
+        Assertions.assertEquals(0, set.size());
         set.destroy();
     }
 
@@ -416,7 +556,7 @@ public class RedissonSetCacheTest extends BaseTest {
         set.add(1);
         set.add(2);
 
-        Assert.assertFalse(set.retainAll(Arrays.asList(1, 2))); // nothing changed
+        Assertions.assertFalse(set.retainAll(Arrays.asList(1, 2))); // nothing changed
         assertThat(set).containsOnly(1, 2);
         set.destroy();
     }
@@ -441,11 +581,11 @@ public class RedissonSetCacheTest extends BaseTest {
         RSetCache<String> cache = redisson.getSetCache("simple");
         cache.add("8", 1, TimeUnit.SECONDS);
 
-        cache.expire(100, TimeUnit.MILLISECONDS);
+        cache.expire(Duration.ofMillis(100));
 
         Thread.sleep(500);
 
-        Assert.assertEquals(0, cache.size());
+        Assertions.assertEquals(0, cache.size());
         cache.destroy();
     }
 
@@ -458,7 +598,7 @@ public class RedissonSetCacheTest extends BaseTest {
 
         Thread.sleep(500);
 
-        Assert.assertEquals(0, cache.size());
+        Assertions.assertEquals(0, cache.size());
         cache.destroy();
     }
 
@@ -473,22 +613,252 @@ public class RedissonSetCacheTest extends BaseTest {
 
         Thread.sleep(500);
 
-        Assert.assertEquals(1, cache.size());
+        Assertions.assertEquals(1, cache.size());
         cache.destroy();
     }
 
     @Test
     public void testScheduler() throws InterruptedException {
         RSetCache<String> cache = redisson.getSetCache("simple33");
-        Assert.assertFalse(cache.contains("33"));
+        Assertions.assertFalse(cache.contains("33"));
 
-        Assert.assertTrue(cache.add("33", 5, TimeUnit.SECONDS));
+        Assertions.assertTrue(cache.add("33", 5, TimeUnit.SECONDS));
 
         Thread.sleep(11000);
 
-        Assert.assertEquals(0, cache.size());
+        Assertions.assertEquals(0, cache.size());
         cache.destroy();
-
     }
 
+    @Test
+    public void testUnion() throws InterruptedException {
+        redisson.getKeys().flushall();
+        RSetCache<Integer> cache1 = redisson.getSetCache("cache1", IntegerCodec.INSTANCE);
+        cache1.add(1);
+        cache1.add(2, 1, TimeUnit.SECONDS);
+        cache1.add(5, 1, TimeUnit.SECONDS);
+        cache1.add(3);
+
+        RSetCache<Integer> cache2 = redisson.getSetCache("cache2", IntegerCodec.INSTANCE);
+        cache2.add(4);
+        cache2.add(2, 1, TimeUnit.SECONDS);
+        cache2.add(5, 1, TimeUnit.SECONDS);
+        cache2.add(7);
+
+        Set<Integer> ff = cache1.readUnion("cache2");
+        assertThat(ff).containsOnly(1, 2, 5, 3, 4, 7);
+
+
+        RSetCache<Integer> cache3 = redisson.getSetCache("cache3", IntegerCodec.INSTANCE);
+        assertThat(cache3.union("cache1", "cache2")).isEqualTo(6);
+        assertThat(cache3).containsExactlyInAnyOrder(1, 3, 2, 5, 4, 7);
+        cache3.clear();
+
+        Thread.sleep(1500);
+
+        assertThat(cache3.union("cache1", "cache2")).isEqualTo(4);
+        assertThat(cache3).containsExactlyInAnyOrder(1, 3, 4, 7);
+
+        assertThat(redisson.getKeys().getKeys()).containsExactlyInAnyOrder("cache1", "cache2", "cache3");
+    }
+
+    @Test
+    public void testDiff() throws InterruptedException {
+        redisson.getKeys().flushall();
+        RSetCache<Integer> cache1 = redisson.getSetCache("cache1", IntegerCodec.INSTANCE);
+        cache1.add(1);
+        cache1.add(2, 1, TimeUnit.SECONDS);
+        cache1.add(5, 1, TimeUnit.SECONDS);
+        cache1.add(3, 1, TimeUnit.SECONDS);
+
+        RSetCache<Integer> cache2 = redisson.getSetCache("cache2", IntegerCodec.INSTANCE);
+        cache2.add(4);
+        cache2.add(2, 1, TimeUnit.SECONDS);
+        cache2.add(5, 1, TimeUnit.SECONDS);
+        cache2.add(7);
+
+        Set<Integer> ff = cache1.readDiff("cache2");
+        assertThat(ff).containsOnly(3, 1);
+
+        RSetCache<Integer> cache3 = redisson.getSetCache("cache3", IntegerCodec.INSTANCE);
+        assertThat(cache3.diff("cache1", "cache2")).isEqualTo(2);
+        assertThat(cache3).containsExactlyInAnyOrder(1, 3);
+        cache3.clear();
+
+        Thread.sleep(1500);
+
+        assertThat(cache3.diff("cache1", "cache2")).isEqualTo(1);
+        assertThat(cache3).containsExactlyInAnyOrder(1);
+
+        assertThat(redisson.getKeys().getKeys()).containsExactlyInAnyOrder("cache1", "cache2", "cache3");
+    }
+
+    @Test
+    public void testCountUnion() throws InterruptedException {
+        redisson.getKeys().flushall();
+        RSetCache<Integer> cache1 = redisson.getSetCache("cache1", IntegerCodec.INSTANCE);
+        cache1.add(1);
+        cache1.add(2, 1, TimeUnit.SECONDS);
+        cache1.add(5, 1, TimeUnit.SECONDS);
+        cache1.add(3);
+
+        RSetCache<Integer> cache2 = redisson.getSetCache("cache2", IntegerCodec.INSTANCE);
+        cache2.add(4);
+        cache2.add(2, 1, TimeUnit.SECONDS);
+        cache2.add(5, 1, TimeUnit.SECONDS);
+        cache2.add(7);
+
+        // 1, 2, 3, 4, 5, 7
+        assertThat(cache1.countUnion("cache2")).isEqualTo(6);
+        assertThat(cache1.countUnionApprox("cache2")).isEqualTo(6);
+        assertThat(cache1.countUnion(3, "cache2")).isEqualTo(3);
+        assertThat(cache1.countUnion("unknownCache")).isEqualTo(4);
+
+        Thread.sleep(1500);
+
+        // expired entries are excluded: 1, 3, 4, 7
+        assertThat(cache1.countUnion("cache2")).isEqualTo(4);
+        assertThat(cache1.countUnion(2, "cache2")).isEqualTo(2);
+
+        // no temporary keys are left behind
+        assertThat(redisson.getKeys().getKeys()).containsExactlyInAnyOrder("cache1", "cache2");
+    }
+
+    @Test
+    public void testCountDiff() throws InterruptedException {
+        RSetCache<Integer> cache1 = redisson.getSetCache("cache1", IntegerCodec.INSTANCE);
+        cache1.add(1);
+        cache1.add(2, 1, TimeUnit.SECONDS);
+        cache1.add(5, 1, TimeUnit.SECONDS);
+        cache1.add(3, 1, TimeUnit.SECONDS);
+
+        RSetCache<Integer> cache2 = redisson.getSetCache("cache2", IntegerCodec.INSTANCE);
+        cache2.add(4);
+        cache2.add(2, 1, TimeUnit.SECONDS);
+        cache2.add(5, 1, TimeUnit.SECONDS);
+        cache2.add(7);
+
+        // {1, 2, 3, 5} minus {2, 4, 5, 7} = 1, 3
+        assertThat(cache1.countDiff("cache2")).isEqualTo(2);
+        assertThat(cache1.countDiff(1, "cache2")).isEqualTo(1);
+        assertThat(cache1.countDiff("unknownCache")).isEqualTo(4);
+
+        Thread.sleep(1500);
+
+        // expired entries are excluded: {1} minus {4, 7} = 1
+        assertThat(cache1.countDiff("cache2")).isEqualTo(1);
+    }
+
+    @Test
+    public void testIntersection() throws InterruptedException {
+        RSetCache<Integer> cache1 = redisson.getSetCache("cache1");
+        cache1.add(1);
+        cache1.add(2, 1, TimeUnit.SECONDS);
+        cache1.add(5, 1, TimeUnit.SECONDS);
+        cache1.add(3);
+
+        RSetCache<Integer> cache2 = redisson.getSetCache("cache2");
+        cache2.add(4);
+        cache2.add(2, 1, TimeUnit.SECONDS);
+        cache2.add(5, 1, TimeUnit.SECONDS);
+        cache2.add(7);
+
+        Set<Integer> ff = cache1.readIntersection("cache2");
+        assertThat(ff).containsOnly(2, 5);
+
+
+        assertThat(cache1.countIntersection("cache2")).isEqualTo(2);
+        RSetCache<Integer> cache3 = redisson.getSetCache("cache3");
+        assertThat(cache3.intersection("cache1", "cache2")).isEqualTo(2);
+        assertThat(cache3).containsExactlyInAnyOrder(2, 5);
+        cache3.clear();
+
+        Thread.sleep(1500);
+
+        assertThat(cache1.countIntersection("cache2")).isEqualTo(0);
+        assertThat(cache3.intersection("cache1", "cache2")).isEqualTo(0);
+        assertThat(cache3).isEmpty();
+
+        assertThat(redisson.getKeys().count()).isEqualTo(2);
+        assertThat(redisson.getKeys().getKeys()).containsExactlyInAnyOrder("cache1", "cache2");
+    }
+
+    @Test
+    public void testAddListener() {
+        testWithParams(redisson -> {
+            RSetCache<Integer> ss = redisson.getSetCache("test");
+            AtomicInteger latch = new AtomicInteger();
+            int id = ss.addListener((SetAddListener) name -> latch.incrementAndGet());
+            ss.add(1, 10, TimeUnit.SECONDS);
+
+            Awaitility.await().atMost(Duration.ofSeconds(1)).untilAsserted(() -> {
+                assertThat(latch.get()).isEqualTo(1);
+            });
+
+            ss.destroy();
+
+            ss.add(1, 10, TimeUnit.SECONDS);
+
+            Awaitility.await().pollDelay(Duration.ofSeconds(1)).atMost(Duration.ofSeconds(2))
+                    .untilAsserted(() -> assertThat(latch.get()).isEqualTo(1));
+        }, NOTIFY_KEYSPACE_EVENTS, "Ez");
+    }
+
+    @Test
+    public void testAddIfAbsentWithMapParam() throws InterruptedException {
+        redisson.getKeys().flushall();
+        RSetCache<String> cache = redisson.getSetCache("cache");
+        Map<String, Duration> map = new HashMap<>();
+        map.put("key1", Duration.ofMinutes(1));
+        map.put("key2", Duration.ofMinutes(1));
+        assertThat(cache.addIfAbsent(map)).isTrue();
+        map = new HashMap<>();
+        map.put("key1", Duration.ofMinutes(1));
+        assertThat(cache.addIfAbsent(map)).isFalse();
+        map = new HashMap<>();
+        map.put("key3", Duration.ofSeconds(1));
+        assertThat(cache.addIfAbsent(map)).isTrue();
+        Thread.sleep(1200);
+        assertThat(cache.addIfAbsent(map)).isTrue();
+        redisson.getKeys().flushall();
+    }
+
+    @Test
+    public void testExpiredListener() {
+        Config config = createConfig();
+        config.setMinCleanUpDelay(1);
+        config.setMaxCleanUpDelay(2);
+        RedissonClient redisson = Redisson.create(config);
+        try {
+            RSetCache<Integer> set = redisson.getSetCache("test");
+            AtomicInteger counter = new AtomicInteger();
+            Set<Integer> expired = Collections.newSetFromMap(new ConcurrentHashMap<>());
+
+            int id = set.addListener((SetExpiredListener<Integer>) value -> {
+                counter.incrementAndGet();
+                expired.add(value);
+            });
+
+            set.add(1, 1, TimeUnit.SECONDS);
+            set.add(2, 1, TimeUnit.SECONDS);
+            set.add(3); // no ttl, must not expire
+
+            Awaitility.await().atMost(Duration.ofSeconds(10)).untilAsserted(() -> {
+                assertThat(counter.get()).isEqualTo(2);
+            });
+            assertThat(expired).containsExactlyInAnyOrder(1, 2);
+            assertThat(set).containsExactly(3);
+
+            // removing the listener stops further expiration notifications
+            set.removeListener(id);
+            counter.set(0);
+            set.add(4, 1, TimeUnit.SECONDS);
+            Awaitility.await().pollDelay(Duration.ofSeconds(4)).atMost(Duration.ofSeconds(6))
+                    .untilAsserted(() -> assertThat(counter.get()).isZero());
+
+            set.destroy();
+        } finally {
+            redisson.shutdown();
+        }
+    }
 }

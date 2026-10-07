@@ -1,5 +1,5 @@
 /**
- * Copyright (c) 2013-2019 Nikita Koksharov
+ * Copyright (c) 2013-2026 Nikita Koksharov
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -15,10 +15,33 @@
  */
 package org.redisson;
 
+import org.redisson.client.protocol.RedisCommand;
+import org.redisson.connection.MasterSlaveEntry;
+
+import java.util.Collection;
+import java.util.List;
+
+/**
+ * 
+ * @author Nikita Koksharov
+ *
+ * @param <T> type of batch result
+ * @param <R> type of result
+ */
 public interface SlotCallback<T, R> {
 
-    void onSlotResult(T result);
+    default RedisCommand<T> createCommand(List<Object> params) {
+        return null;
+    }
 
-    R onFinish();
+    default Object[] createKeys(MasterSlaveEntry entry, List<Object> params) {
+        return params.toArray();
+    }
+
+    default Object[] createParams(List<Object> params) {
+        return params.toArray();
+    }
+
+    R onResult(Collection<T> result);
 
 }

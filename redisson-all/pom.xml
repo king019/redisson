@@ -4,7 +4,7 @@
     <parent>
         <groupId>org.redisson</groupId>
         <artifactId>redisson-parent</artifactId>
-        <version>3.10.6-SNAPSHOT</version>
+        <version>4.8.1-SNAPSHOT</version>
         <relativePath>../</relativePath>
     </parent>
 
@@ -13,13 +13,13 @@
 
     <name>Redisson/All-in-One</name>
 
-    <description>Redis based In-Memory Data Grid for Java</description>
-    <inceptionYear>2014</inceptionYear>
-    <url>http://redisson.org</url>
+    <description>Valkey and Redis Java client. Real-Time Data Platform. Sync/Async/RxJava3/Reactive API. Client side caching. Over 50 Redis based Java objects and services: JCache API, Apache Tomcat, Hibernate, Spring, Set, Multimap, SortedSet, Map, List, Queue, Deque, Semaphore, Lock, AtomicLong, Map Reduce, Bloom filter, Scheduler, RPC</description>
+    <inceptionYear>2013</inceptionYear>
+    <url>https://redisson.org</url>
 
     <organization>
-       <name>The Redisson Project</name>
-       <url>http://redisson.org/</url>
+       <name>Redisson</name>
+       <url>https://redisson.org/</url>
     </organization>
 
     <scm>
@@ -28,10 +28,6 @@
         <developerConnection>scm:git:git@github.com:mrniko/redisson.git</developerConnection>
         <tag>redisson-parent-0.9.0</tag>
     </scm>
-
-    <prerequisites>
-        <maven>3.0.5</maven>
-    </prerequisites>
 
     <licenses>
         <license>
@@ -55,7 +51,7 @@
                     <plugin>
                         <groupId>org.apache.maven.plugins</groupId>
                         <artifactId>maven-gpg-plugin</artifactId>
-                        <version>1.6</version>
+                        <version>3.2.4</version>
                         <executions>
                             <execution>
                                 <id>sign-artifacts</id>
@@ -93,19 +89,14 @@
             <artifactId>netty-transport-native-kqueue</artifactId>
         </dependency>
         <dependency>
-            <groupId>de.ruedigermoeller</groupId>
-            <artifactId>fst</artifactId>
-            <version>2.57</version>
-        </dependency>
-        <dependency>
-            <groupId>org.slf4j</groupId>
-            <artifactId>slf4j-simple</artifactId>
-            <version>1.7.25</version>
-        </dependency>
-        <dependency>
             <groupId>org.xerial.snappy</groupId>
             <artifactId>snappy-java</artifactId>
-            <version>1.1.7.2</version>
+            <version>1.1.10.6</version>
+        </dependency>
+        <dependency>
+            <groupId>at.yawk.lz4</groupId>
+            <artifactId>lz4-java</artifactId>
+            <version>1.11.2</version>
         </dependency>
     </dependencies>
 
@@ -114,7 +105,7 @@
             <plugin>
                 <groupId>org.apache.maven.plugins</groupId>
                 <artifactId>maven-jar-plugin</artifactId>
-                <version>3.1.0</version>
+                <version>3.4.1</version>
                 <configuration>
                     <archive>
                         <index>true</index>
@@ -124,14 +115,31 @@
                             <addDefaultImplementationEntries>true</addDefaultImplementationEntries>
                             <addDefaultSpecificationEntries>true</addDefaultSpecificationEntries>
                         </manifest>
+                        <manifestEntries>
+                            <Build-Time>${maven.build.timestamp}</Build-Time>
+                            <Automatic-Module-Name>redisson.all</Automatic-Module-Name>
+                        </manifestEntries>
                     </archive>
                 </configuration>
+                <executions>
+                    <execution>
+                        <id>empty-javadoc-jar</id>
+                        <phase>package</phase>
+                        <goals>
+                            <goal>jar</goal>
+                        </goals>
+                        <configuration>
+                            <classifier>javadoc</classifier>
+                            <classesDirectory>${basedir}/javadoc</classesDirectory>
+                        </configuration>
+                    </execution>
+                </executions>
             </plugin>
 
             <plugin>
                 <groupId>org.apache.maven.plugins</groupId>
                 <artifactId>maven-shade-plugin</artifactId>
-                <version>3.2.1</version>
+                <version>3.6.2</version>
                 <executions>
                     <execution>
                         <id>shade-artifacts</id>
@@ -148,6 +156,7 @@
                                 <artifact>*</artifact>
                                 <excludes>
                                   <exclude>META-INF/**/*.class</exclude>
+                                  <exclude>META-INF/**/spring.*</exclude>
                                 </excludes>
                               </filter>
                             </filters>
@@ -155,26 +164,6 @@
                     </execution>
                 </executions>
 	    </plugin>
-
-            <plugin>
-                <groupId>org.apache.maven.plugins</groupId>
-                <artifactId>maven-jar-plugin</artifactId>
-                <version>3.1.0</version>
-                <executions>
-                    <execution>
-                        <id>empty-javadoc-jar</id>
-                        <phase>package</phase>
-                        <goals>
-                            <goal>jar</goal>
-                        </goals>
-                        <configuration>
-                            <classifier>javadoc</classifier>
-                            <classesDirectory>${basedir}/javadoc</classesDirectory>
-                        </configuration>
-                    </execution>
-                </executions>
-            </plugin>
-
         </plugins>
     </build>
 

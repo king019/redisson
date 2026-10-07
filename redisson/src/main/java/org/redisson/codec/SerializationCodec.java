@@ -1,5 +1,5 @@
 /**
- * Copyright (c) 2013-2019 Nikita Koksharov
+ * Copyright (c) 2013-2026 Nikita Koksharov
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -15,21 +15,24 @@
  */
 package org.redisson.codec;
 
-import java.io.IOException;
-import java.io.ObjectInputStream;
-import java.io.ObjectOutputStream;
-
+import io.netty.buffer.ByteBuf;
+import io.netty.buffer.ByteBufAllocator;
+import io.netty.buffer.ByteBufInputStream;
+import io.netty.buffer.ByteBufOutputStream;
 import org.redisson.client.codec.BaseCodec;
 import org.redisson.client.handler.State;
 import org.redisson.client.protocol.Decoder;
 import org.redisson.client.protocol.Encoder;
 
-import io.netty.buffer.ByteBuf;
-import io.netty.buffer.ByteBufAllocator;
-import io.netty.buffer.ByteBufInputStream;
-import io.netty.buffer.ByteBufOutputStream;
+import java.io.IOException;
+import java.io.ObjectInputStream;
+import java.io.ObjectOutputStream;
+import java.util.Set;
 
 /**
+ * JDK's serialization codec.
+ * <p>
+ * Fully thread-safe.*
  *
  * @author Nikita Koksharov
  *
@@ -40,14 +43,22 @@ public class SerializationCodec extends BaseCodec {
         @Override
         public Object decode(ByteBuf buf, State state) throws IOException {
             try {
-                ByteBufInputStream in = new ByteBufInputStream(buf);
-                ObjectInputStream inputStream;
-                if (classLoader != null) {
-                    inputStream = new CustomObjectInputStream(classLoader, in);
-                } else {
-                    inputStream = new ObjectInputStream(in);
+                //set thread context class loader to be the classLoader variable as there could be reflection
+                //done while reading from input stream which reflection will use thread class loader to load classes on demand
+                ClassLoader currentThreadClassLoader = Thread.currentThread().getContextClassLoader();
+                try {
+                    ByteBufInputStream in = new ByteBufInputStream(buf);
+                    ObjectInputStream inputStream;
+                    if (classLoader != null) {
+                        Thread.currentThread().setContextClassLoader(classLoader);
+                        inputStream = new CustomObjectInputStream(classLoader, in, allowedClasses);
+                    } else {
+                        inputStream = new CustomObjectInputStream(currentThreadClassLoader, in, allowedClasses);
+                    }
+                    return inputStream.readObject();
+                } finally {
+                    Thread.currentThread().setContextClassLoader(currentThreadClassLoader);
                 }
-                return inputStream.readObject();
             } catch (IOException e) {
                 throw e;
             } catch (Exception e) {
@@ -56,24 +67,21 @@ public class SerializationCodec extends BaseCodec {
         }
     };
 
-    private final Encoder encoder = new Encoder() {
-
-        @Override
-        public ByteBuf encode(Object in) throws IOException {
-            ByteBuf out = ByteBufAllocator.DEFAULT.buffer();
-            try {
-                ByteBufOutputStream result = new ByteBufOutputStream(out);
-                ObjectOutputStream outputStream = new ObjectOutputStream(result);
-                outputStream.writeObject(in);
-                outputStream.close();
-                return result.buffer();
-            } catch (IOException e) {
-                out.release();
-                throw e;
-            }
+    private final Encoder encoder = in -> {
+        ByteBuf out = ByteBufAllocator.DEFAULT.buffer();
+        try {
+            ByteBufOutputStream result = new ByteBufOutputStream(out);
+            ObjectOutputStream outputStream = new ObjectOutputStream(result);
+            outputStream.writeObject(in);
+            outputStream.close();
+            return result.buffer();
+        } catch (IOException e) {
+            out.release();
+            throw e;
         }
     };
-    
+
+    private Set<String> allowedClasses;
     private final ClassLoader classLoader;
 
     public SerializationCodec() {
@@ -86,6 +94,12 @@ public class SerializationCodec extends BaseCodec {
 
     public SerializationCodec(ClassLoader classLoader, SerializationCodec codec) {
         this.classLoader = classLoader;
+        this.allowedClasses = codec.allowedClasses;
+    }
+
+    public SerializationCodec(ClassLoader classLoader, Set<String> allowedClasses) {
+        this.classLoader = classLoader;
+        this.allowedClasses = allowedClasses;
     }
     
     @Override

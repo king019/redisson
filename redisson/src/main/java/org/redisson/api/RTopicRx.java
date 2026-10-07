@@ -1,5 +1,5 @@
 /**
- * Copyright (c) 2013-2019 Nikita Koksharov
+ * Copyright (c) 2013-2026 Nikita Koksharov
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -20,12 +20,12 @@ import java.util.List;
 import org.redisson.api.listener.MessageListener;
 import org.redisson.api.listener.StatusListener;
 
-import io.reactivex.Completable;
-import io.reactivex.Flowable;
-import io.reactivex.Single;
+import io.reactivex.rxjava3.core.Completable;
+import io.reactivex.rxjava3.core.Flowable;
+import io.reactivex.rxjava3.core.Single;
 
 /**
- * RxJava2 interface for Publish Subscribe object. Messages are delivered to all message listeners across Redis cluster.
+ * RxJava3 interface for Publish Subscribe object. Messages are delivered to all message listeners across Redis cluster.
  *
  * @author Nikita Koksharov
  *
@@ -86,7 +86,7 @@ public interface RTopicRx {
     Completable removeListener(MessageListener<?> listener);
     
     /**
-     * Returns stream of messages.
+     * Returns continues stream of published messages.
      * 
      * @param <M> - type of message
      * @param type - type of message to listen
@@ -101,5 +101,12 @@ public interface RTopicRx {
      * @return amount of subscribers
      */
     Single<Long> countSubscribers();
-    
+
+    /**
+     * Removes all listeners from this topic
+     *
+     * @return void
+     */
+    Completable removeAllListeners();
+
 }

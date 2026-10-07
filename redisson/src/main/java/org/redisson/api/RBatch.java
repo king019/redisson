@@ -1,5 +1,5 @@
 /**
- * Copyright (c) 2013-2019 Nikita Koksharov
+ * Copyright (c) 2013-2026 Nikita Koksharov
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -15,10 +15,9 @@
  */
 package org.redisson.api;
 
-import java.util.concurrent.TimeUnit;
-
 import org.redisson.client.RedisException;
 import org.redisson.client.codec.Codec;
+import org.redisson.codec.JsonCodec;
 
 /**
  * Interface for using Redis pipeline feature.
@@ -32,6 +31,144 @@ import org.redisson.client.codec.Codec;
  *
  */
 public interface RBatch {
+
+    /**
+     * Returns Array instance by <code>name</code>.
+     * <p>
+     * Requires <b>Redis 8.8 or higher.</b>
+     *
+     * @param <V> value type
+     * @param name name of instance
+     * @return RArray object
+     */
+    <V> RArrayAsync<V> getArray(String name);
+
+    /**
+     * Returns Array instance by <code>name</code>
+     * using provided <code>codec</code> for values.
+     * <p>
+     * Requires <b>Redis 8.8 or higher.</b>
+     *
+     * @param <V> value type
+     * @param name name of instance
+     * @param codec codec for values
+     * @return RArray object
+     */
+    <V> RArrayAsync<V> getArray(String name, Codec codec);
+
+    /**
+     * Returns time series instance by <code>name</code>, backed by the TS.* commands of the
+     * RedisTimeSeries module.
+     * <p>
+     * The iterator methods are meaningless here, as they are on every other object a batch
+     * hands out: walking a series takes one round trip per window, each bounded by what the one
+     * before it returned, and a batch has not sent anything yet.
+     * <p>
+     * There is no codec overload, because samples are timestamps and doubles handled by the
+     * module itself.
+     *
+     * @param name - name of object
+     * @return time series instance
+     */
+    RTimeSeriesNativeAsync getTimeSeriesNative(String name);
+
+    /**
+     * Returns bloom filter native instance by <code>name</code>.
+     * Covers BF.* commands.
+     *
+     * @param <T> type of object
+     * @param name - name of object
+     * @return RBloomFilterNative object
+     */
+    <T> RBloomFilterNativeAsync<T> getBloomFilterNative(String name);
+
+    /**
+     * Returns bloom filter native instance by <code>name</code>
+     * using provided <code>codec</code> for objects.
+     * Covers BF.* commands.
+     *
+     * @param <T> type of object
+     * @param name - name of object
+     * @param codec - codec for values
+     * @return RBloomFilterNative object
+     */
+    <T> RBloomFilterNativeAsync<T> getBloomFilterNative(String name, Codec codec);
+
+    /**
+     * Returns cuckoo filter instance by <code>name</code>.
+     *
+     * @param <V> type of value
+     * @param name name of object
+     * @return CuckooFilter object
+     */
+    <V> RCuckooFilterAsync<V> getCuckooFilter(String name);
+
+    /**
+     * Returns cuckoo filter instance by <code>name</code>
+     * using provided <code>codec</code> for values.
+     *
+     * @param <V> type of value
+     * @param name name of object
+     * @param codec codec for values
+     * @return CuckooFilter object
+     */
+    <V> RCuckooFilterAsync<V> getCuckooFilter(String name, Codec codec);
+
+    /**
+     * Returns Top-K sketch instance by <code>name</code>.
+     *
+     * @param <V> type of value
+     * @param name name of object
+     * @return TopK object
+     */
+    <V> RTopKAsync<V> getTopK(String name);
+
+    /**
+     * Returns Top-K sketch instance by <code>name</code>
+     * using provided <code>codec</code> for values.
+     *
+     * @param <V> type of value
+     * @param name name of object
+     * @param codec codec for values
+     * @return TopK object
+     */
+    <V> RTopKAsync<V> getTopK(String name, Codec codec);
+
+    /**
+     * Returns count-min sketch instance by <code>name</code>.
+     *
+     * @param <V> type of value
+     * @param name name of object
+     * @return CountMin object
+     */
+    <V> RCountMinAsync<V> getCountMin(String name);
+
+    /**
+     * Returns count-min sketch instance by <code>name</code>
+     * using provided <code>codec</code> for values.
+     *
+     * @param <V> type of value
+     * @param name name of object
+     * @param codec codec for values
+     * @return CountMin object
+     */
+    <V> RCountMinAsync<V> getCountMin(String name, Codec codec);
+
+    /**
+     * Returns t-digest instance by <code>name</code>.
+     *
+     * @param name name of object
+     * @return TDigest object
+     */
+    RTDigestAsync getTDigest(String name);
+
+    /**
+     * Returns vector set instance by name.
+     * Stores vectors and associated elements in a set optimized for similarity search.
+     *
+     * @return RVectorSet object
+     */
+    RVectorSetAsync getVectorSet(String name);
 
     /**
      * Returns stream instance by <code>name</code>
@@ -182,6 +319,34 @@ public interface RBatch {
     <K, V> RMapCacheAsync<K, V> getMapCache(String name);
 
     /**
+     * Returns map instance by name.
+     * Supports entry eviction with a given TTL.
+     * <p>
+     * Requires <b>Redis 7.4.0 and higher.</b> or <b>Valkey 9.0.0 and higher.</b>
+     *
+     * @param <K> type of key
+     * @param <V> type of value
+     * @param name name of object
+     * @return Map object
+     */
+    <K, V> RMapCacheNativeAsync<K, V> getMapCacheNative(String name);
+
+    /**
+     * Returns map instance by name
+     * using provided codec for both map keys and values.
+     * Supports entry eviction with a given TTL.
+     * <p>
+     * Requires <b>Redis 7.4.0 and higher.</b> or <b>Valkey 9.0.0 and higher.</b>
+     *
+     * @param <K> type of key
+     * @param <V> type of value
+     * @param name name of object
+     * @param codec codec for keys and values
+     * @return Map object
+     */
+    <K, V> RMapCacheNativeAsync<K, V> getMapCacheNative(String name, Codec codec);
+
+    /**
      * Returns object holder by <code>name</code>
      *
      * @param <V> type of object
@@ -191,6 +356,18 @@ public interface RBatch {
     <V> RBucketAsync<V> getBucket(String name);
 
     <V> RBucketAsync<V> getBucket(String name, Codec codec);
+
+    /**
+     * Returns JSON data holder instance by name using provided codec.
+     *
+     * @see org.redisson.codec.JacksonCodec
+     *
+     * @param <V> type of value
+     * @param name name of object
+     * @param codec codec for values
+     * @return JsonBucket object
+     */
+    <V> RJsonBucketAsync<V> getJsonBucket(String name, JsonCodec codec);
 
     /**
      * Returns HyperLogLog object
@@ -247,7 +424,7 @@ public interface RBatch {
      * @param name - name of object
      * @return ListMultimapCache object
      */
-    <K, V> RMultimapAsync<K, V> getListMultimapCache(String name);
+    <K, V> RMultimapCacheAsync<K, V> getListMultimapCache(String name);
     
     /**
      * Returns List based Multimap instance by name
@@ -262,8 +439,76 @@ public interface RBatch {
      * @param codec - codec for keys and values
      * @return ListMultimapCache object
      */
-    <K, V> RMultimapAsync<K, V> getListMultimapCache(String name, Codec codec);
-    
+    <K, V> RMultimapCacheAsync<K, V> getListMultimapCache(String name, Codec codec);
+
+    /**
+     * Returns List based Multimap instance by name.
+     * Supports key-entry eviction with a given TTL value.
+     * Stores insertion order and allows duplicates for values mapped to key.
+     * <p>
+     * Uses Redis native commands for entry expiration and not a scheduled eviction task.
+     * <p>
+     * Requires <b>Redis 7.4.0 and higher.</b> or <b>Valkey 9.0.0 and higher.</b>
+     *
+     * @param <K> type of key
+     * @param <V> type of value
+     * @param name name of object
+     * @return ListMultimapCache object
+     */
+    <K, V> RMultimapCacheAsync<K, V> getListMultimapCacheNative(String name);
+
+    /**
+     * Returns List based Multimap instance by name
+     * using provided codec for both map keys and values.
+     * Supports key-entry eviction with a given TTL value.
+     * Stores insertion order and allows duplicates for values mapped to key.
+     * <p>
+     * Uses Redis native commands for entry expiration and not a scheduled eviction task.
+     * <p>
+     * Requires <b>Redis 7.4.0 and higher.</b> or <b>Valkey 9.0.0 and higher.</b>
+     *
+     * @param <K> type of key
+     * @param <V> type of value
+     * @param name name of object
+     * @param codec codec for keys and values
+     * @return ListMultimapCache object
+     */
+    <K, V> RMultimapCacheAsync<K, V> getListMultimapCacheNative(String name, Codec codec);
+
+    /**
+     * Returns Set based Multimap instance by name.
+     * Supports key-entry eviction with a given TTL value.
+     * Doesn't allow duplications for values mapped to key.
+     * <p>
+     * Uses Redis native commands for entry expiration and not a scheduled eviction task.
+     * <p>
+     * Requires <b>Redis 7.4.0 and higher.</b> or <b>Valkey 9.0.0 and higher.</b>
+     *
+     * @param <K> type of key
+     * @param <V> type of value
+     * @param name name of object
+     * @return SetMultimapCache object
+     */
+    <K, V> RMultimapCacheAsync<K, V> getSetMultimapCacheNative(String name);
+
+    /**
+     * Returns Set based Multimap instance by name
+     * using provided codec for both map keys and values.
+     * Supports key-entry eviction with a given TTL value.
+     * Doesn't allow duplications for values mapped to key.
+     * <p>
+     * Uses Redis native commands for entry expiration and not a scheduled eviction task.
+     * <p>
+     * Requires <b>Redis 7.4.0 and higher.</b> or <b>Valkey 9.0.0 and higher.</b>
+     *
+     * @param <K> type of key
+     * @param <V> type of value
+     * @param name name of object
+     * @param codec codec for keys and values
+     * @return SetMultimapCache object
+     */
+    <K, V> RMultimapCacheAsync<K, V> getSetMultimapCacheNative(String name, Codec codec);
+
     /**
      * Returns map instance by name.
      *
@@ -296,6 +541,29 @@ public interface RBatch {
     RTopicAsync getTopic(String name);
 
     RTopicAsync getTopic(String name, Codec codec);
+
+    /**
+     * Returns Sharded Topic instance by name.
+     * <p>
+     * Messages are delivered to message listeners connected to the same Topic.
+     * <p>
+     *
+     * @param name - name of object
+     * @return Topic object
+     */
+    RShardedTopicAsync getShardedTopic(String name);
+
+    /**
+     * Returns Sharded Topic instance by name using provided codec for messages.
+     * <p>
+     * Messages are delivered to message listeners connected to the same Topic.
+     * <p>
+     *
+     * @param name - name of object
+     * @param codec - codec for message
+     * @return Topic object
+     */
+    RShardedTopicAsync getShardedTopic(String name, Codec codec);
 
     /**
      * Returns queue instance by name.
@@ -399,8 +667,23 @@ public interface RBatch {
      * @param codec - codec for params and result
      * @return Script object
      */
-    RScript getScript(Codec codec);
-    
+    RScriptAsync getScript(Codec codec);
+
+    /**
+     * Returns interface for Redis Function feature
+     *
+     * @return function object
+     */
+    RFunctionAsync getFunction();
+
+    /**
+     * Returns interface for Redis Function feature using provided codec
+     *
+     * @param codec - codec for params and result
+     * @return function interface
+     */
+    RFunctionAsync getFunction(Codec codec);
+
     /**
      * Returns keys operations.
      * Each of Redis/Redisson object associated with own key
@@ -408,6 +691,21 @@ public interface RBatch {
      * @return Keys object
      */
     RKeysAsync getKeys();
+
+    /**
+     * Returns API for RediSearch module
+     *
+     * @return RSearchAsync object
+     */
+    RSearchAsync getSearch();
+
+    /**
+     * Returns API for RediSearch module using defined codec for attribute values.
+     *
+     * @param codec codec for entry
+     * @return RSearchAsync object
+     */
+    RSearchAsync getSearch(Codec codec);
 
     /**
      * Executes all operations accumulated during async methods invocations.
@@ -431,40 +729,17 @@ public interface RBatch {
      */
     RFuture<BatchResult<?>> executeAsync();
 
-    /*
-     * Use BatchOptions#atomic
+    /**
+     * Discard batched commands and release allocated buffers used for parameters encoding.
      */
-    @Deprecated
-    RBatch atomic();
-    
-    /*
-     * Use BatchOptions#skipResult
-     */
-    @Deprecated
-    RBatch skipResult();
+    void discard();
 
-    /*
-     * Use BatchOptions#syncSlaves
+    /**
+     * Discard batched commands and release allocated buffers used for parameters encoding.
+     *
+     * @return void
      */
-    @Deprecated
-    RBatch syncSlaves(int slaves, long timeout, TimeUnit unit);
-    
-    /*
-     * Use BatchOptions#responseTimeout
-     */
-    @Deprecated
-    RBatch timeout(long timeout, TimeUnit unit);
+    RFuture<Void> discardAsync();
 
-    /*
-     * Use BatchOptions#retryInterval
-     */
-    @Deprecated
-    RBatch retryInterval(long retryInterval, TimeUnit unit);
 
-    /*
-     * Use BatchOptions#retryAttempts
-     */
-    @Deprecated
-    RBatch retryAttempts(int retryAttempts);
-    
 }

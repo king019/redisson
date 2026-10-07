@@ -1,5 +1,5 @@
 /**
- * Copyright (c) 2013-2019 Nikita Koksharov
+ * Copyright (c) 2013-2026 Nikita Koksharov
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -15,6 +15,8 @@
  */
 package org.redisson.api;
 
+import java.time.Duration;
+import java.time.Instant;
 import java.util.Date;
 import java.util.concurrent.TimeUnit;
 
@@ -30,32 +32,138 @@ import reactor.core.publisher.Mono;
 public interface RExpirableReactive extends RObjectReactive {
 
     /**
-     * Set a timeout for object in  mode. After the timeout has expired,
-     * the key will automatically be deleted.
+     * Use {@link #expire(Duration)} instead
      *
      * @param timeToLive - timeout before object will be deleted
      * @param timeUnit - timeout time unit
      * @return <code>true</code> if the timeout was set and <code>false</code> if not
      */
+    @Deprecated
     Mono<Boolean> expire(long timeToLive, TimeUnit timeUnit);
 
     /**
-     * Set an expire date for object in  mode. When expire date comes
-     * the key will automatically be deleted.
+     * Use {@link #expire(Instant)} instead
      *
      * @param timestamp - expire date
      * @return <code>true</code> if the timeout was set and <code>false</code> if not
      */
+    @Deprecated
     Mono<Boolean> expireAt(Date timestamp);
 
     /**
-     * Set an expire date for object in  mode. When expire date comes
-     * the key will automatically be deleted.
+     * Use {@link #expire(Instant)} instead
      *
      * @param timestamp - expire date in milliseconds (Unix timestamp)
      * @return <code>true</code> if the timeout was set and <code>false</code> if not
      */
+    @Deprecated
     Mono<Boolean> expireAt(long timestamp);
+
+    /**
+     * Set an expire date for object. When expire date comes
+     * the key will automatically be deleted.
+     *
+     * @param instant - expire date
+     * @return <code>true</code> if the timeout was set and <code>false</code> if not
+     */
+    Mono<Boolean> expire(Instant instant);
+
+    /**
+     * Sets an expiration date for this object only if it has been already set.
+     * When expire date comes the object will automatically be deleted.
+     * <p>
+     * Requires <b>Redis 7.0.0 and higher.</b>
+     *
+     * @param time expire date
+     * @return <code>true</code> if the timeout was set and <code>false</code> if not
+     */
+    Mono<Boolean> expireIfSet(Instant time);
+
+    /**
+     * Sets an expiration date for this object only if it hasn't been set before.
+     * When expire date comes the object will automatically be deleted.
+     * <p>
+     * Requires <b>Redis 7.0.0 and higher.</b>
+     *
+     * @param time expire date
+     * @return <code>true</code> if the timeout was set and <code>false</code> if not
+     */
+    Mono<Boolean> expireIfNotSet(Instant time);
+
+    /**
+     * Sets an expiration date for this object only if it's greater than expiration date set before.
+     * When expire date comes the object will automatically be deleted.
+     * <p>
+     * Requires <b>Redis 7.0.0 and higher.</b>
+     *
+     * @param time expire date
+     * @return <code>true</code> if the timeout was set and <code>false</code> if not
+     */
+    Mono<Boolean> expireIfGreater(Instant time);
+
+    /**
+     * Sets an expiration date for this object only if it's less than expiration date set before.
+     * When expire date comes the object will automatically be deleted.
+     * <p>
+     * Requires <b>Redis 7.0.0 and higher.</b>
+     *
+     * @param time expire date
+     * @return <code>true</code> if the timeout was set and <code>false</code> if not
+     */
+    Mono<Boolean> expireIfLess(Instant time);
+
+    /**
+     * Sets a timeout for this object. After the timeout has expired,
+     * the key will automatically be deleted.
+     *
+     * @param duration timeout before object will be deleted
+     * @return <code>true</code> if the timeout was set and <code>false</code> if not
+     */
+    Mono<Boolean> expire(Duration duration);
+
+    /**
+     * Sets a timeout for this object only if it has been already set.
+     * After the timeout has expired, the key will automatically be deleted.
+     * <p>
+     * Requires <b>Redis 7.0.0 and higher.</b>
+     *
+     * @param duration timeout before object will be deleted
+     * @return <code>true</code> if the timeout was set and <code>false</code> if not
+     */
+    Mono<Boolean> expireIfSet(Duration duration);
+
+    /**
+     * Sets a timeout for this object only if it hasn't been set before.
+     * After the timeout has expired, the key will automatically be deleted.
+     * <p>
+     * Requires <b>Redis 7.0.0 and higher.</b>
+     *
+     * @param duration timeout before object will be deleted
+     * @return <code>true</code> if the timeout was set and <code>false</code> if not
+     */
+    Mono<Boolean> expireIfNotSet(Duration duration);
+
+    /**
+     * Sets a timeout for this object only if it's greater than timeout set before.
+     * After the timeout has expired, the key will automatically be deleted.
+     * <p>
+     * Requires <b>Redis 7.0.0 and higher.</b>
+     *
+     * @param duration timeout before object will be deleted
+     * @return <code>true</code> if the timeout was set and <code>false</code> if not
+     */
+    Mono<Boolean> expireIfGreater(Duration duration);
+
+    /**
+     * Sets a timeout for this object only if it's less than timeout set before.
+     * After the timeout has expired, the key will automatically be deleted.
+     * <p>
+     * Requires <b>Redis 7.0.0 and higher.</b>
+     *
+     * @param duration timeout before object will be deleted
+     * @return <code>true</code> if the timeout was set and <code>false</code> if not
+     */
+    Mono<Boolean> expireIfLess(Duration duration);
 
     /**
      * Clear an expire timeout or expire date for object in  mode.
@@ -66,12 +174,23 @@ public interface RExpirableReactive extends RObjectReactive {
     Mono<Boolean> clearExpire();
 
     /**
-     * Get remaining time to live of object in milliseconds.
+     * Returns remaining time of the object in milliseconds.
      *
      * @return time in milliseconds
      *          -2 if the key does not exist.
      *          -1 if the key exists but has no associated expire.
      */
     Mono<Long> remainTimeToLive();
+
+    /**
+     * Returns expiration time of the object as the absolute Unix expiration timestamp in milliseconds.
+     * <p>
+     * Requires <b>Redis 7.0.0 and higher.</b>
+     *
+     * @return Unix time in milliseconds
+     *          -2 if the key does not exist.
+     *          -1 if the key exists but has no associated expiration time.
+     */
+    Mono<Long> getExpireTime();
 
 }

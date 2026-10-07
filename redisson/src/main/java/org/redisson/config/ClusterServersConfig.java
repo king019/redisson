@@ -1,5 +1,5 @@
 /**
- * Copyright (c) 2013-2019 Nikita Koksharov
+ * Copyright (c) 2013-2026 Nikita Koksharov
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -15,10 +15,10 @@
  */
 package org.redisson.config;
 
-import java.net.URI;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.List;
-import org.redisson.misc.URIBuilder;
+import java.util.Map;
 
 /**
  * 
@@ -27,15 +27,25 @@ import org.redisson.misc.URIBuilder;
  */
 public class ClusterServersConfig extends BaseMasterSlaveServersConfig<ClusterServersConfig> {
 
+    private NatMapper natMapper = NatMapper.direct();
+    
     /**
      * Redis cluster node urls list
      */
-    private List<URI> nodeAddresses = new ArrayList<URI>();
+    private List<String> nodeAddresses = new ArrayList<>();
 
     /**
      * Redis cluster scan interval in milliseconds
      */
     private int scanInterval = 5000;
+
+    private boolean checkSlotsCoverage = true;
+
+    private boolean checkMasterLinkStatus = false;
+
+    private ShardedSubscriptionMode shardedSubscriptionMode = ShardedSubscriptionMode.AUTO;
+
+    private int database = 0;
 
     public ClusterServersConfig() {
     }
@@ -44,6 +54,11 @@ public class ClusterServersConfig extends BaseMasterSlaveServersConfig<ClusterSe
         super(config);
         setNodeAddresses(config.getNodeAddresses());
         setScanInterval(config.getScanInterval());
+        setNatMapper(config.getNatMapper());
+        setCheckSlotsCoverage(config.isCheckSlotsCoverage());
+        setCheckMasterLinkStatus(config.isCheckMasterLinkStatus());
+        setShardedSubscriptionMode(config.getShardedSubscriptionMode());
+        setDatabase(config.getDatabase());
     }
 
     /**
@@ -53,15 +68,13 @@ public class ClusterServersConfig extends BaseMasterSlaveServersConfig<ClusterSe
      * @return config
      */
     public ClusterServersConfig addNodeAddress(String... addresses) {
-        for (String address : addresses) {
-            nodeAddresses.add(URIBuilder.create(address));
-        }
+        nodeAddresses.addAll(Arrays.asList(addresses));
         return this;
     }
-    public List<URI> getNodeAddresses() {
+    public List<String> getNodeAddresses() {
         return nodeAddresses;
     }
-    void setNodeAddresses(List<URI> nodeAddresses) {
+    public void setNodeAddresses(List<String> nodeAddresses) {
         this.nodeAddresses = nodeAddresses;
     }
 
@@ -79,6 +92,108 @@ public class ClusterServersConfig extends BaseMasterSlaveServersConfig<ClusterSe
     public ClusterServersConfig setScanInterval(int scanInterval) {
         this.scanInterval = scanInterval;
         return this;
+    }
+
+    public boolean isCheckSlotsCoverage() {
+        return checkSlotsCoverage;
+    }
+
+    /**
+     * Enables cluster slots check during Redisson startup.
+     * <p>
+     * Default is <code>true</code>
+     *
+     * @param checkSlotsCoverage boolean value
+     * @return config
+     */
+    public ClusterServersConfig setCheckSlotsCoverage(boolean checkSlotsCoverage) {
+        this.checkSlotsCoverage = checkSlotsCoverage;
+        return this;
+    }
+
+    public boolean isCheckMasterLinkStatus() {
+        return checkMasterLinkStatus;
+    }
+
+    /**
+     * Enable checking the 'master-link-status' of a slave from the INFO REPLICATION command.
+     * <p>
+     * Default is <code>false</code>
+     *
+     * @param checkMasterLinkStatus boolean value
+     * @return config
+     */
+    public ClusterServersConfig setCheckMasterLinkStatus(boolean checkMasterLinkStatus) {
+        this.checkMasterLinkStatus = checkMasterLinkStatus;
+        return this;
+    }
+
+    /*
+     * Use {@link #setNatMapper(NatMapper)}
+     */
+    @Deprecated
+    public ClusterServersConfig setNatMap(Map<String, String> natMap) {
+        HostPortNatMapper mapper = new HostPortNatMapper();
+        mapper.setHostsPortMap(natMap);
+        this.natMapper = mapper;
+        return this;
+    }
+
+    public NatMapper getNatMapper() {
+        return natMapper;
+    }
+
+    /**
+     * Defines NAT mapper which maps Redis URI object.
+     * Applied to all Redis connections.
+     *
+     * @see HostNatMapper
+     * @see HostPortNatMapper
+     *
+     * @param natMapper nat mapper object
+     * @return config
+     */
+    public ClusterServersConfig setNatMapper(NatMapper natMapper) {
+        this.natMapper = natMapper;
+        return this;
+    }
+
+    public ShardedSubscriptionMode getShardedSubscriptionMode() {
+        return shardedSubscriptionMode;
+    }
+
+    /**
+     * Defines whether to use sharded subscription feature available in Redis 7.0+.
+     * <p>
+     * Used in RMapCache, RLocalCachedMap, RCountDownLatch, RLock, RPermitExpirableSemaphore,
+     * RSemaphore, RLongAdder, RDoubleAdder, Micronaut Session, Apache Tomcat Manager objects.
+     * <p>
+     * Default is <code>AUTO</code>
+     *
+     * @param shardedSubscriptionMode param
+     * @return config
+     */
+    public ClusterServersConfig setShardedSubscriptionMode(ShardedSubscriptionMode shardedSubscriptionMode) {
+        this.shardedSubscriptionMode = shardedSubscriptionMode;
+        return this;
+    }
+
+    /**
+     * Database index used for Valkey connection.
+     * <p>
+     * Default is <code>0</code>
+     * <p>
+     * <b>Requires <b>Valkey 9.0.0 and higher.</b>
+     *
+     * @param database number
+     * @return config
+     */
+    public ClusterServersConfig setDatabase(int database) {
+        this.database = database;
+        return this;
+    }
+    public int getDatabase() {
+        return database;
     }
 
 }

@@ -1,5 +1,5 @@
 /**
- * Copyright (c) 2013-2019 Nikita Koksharov
+ * Copyright (c) 2013-2026 Nikita Koksharov
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -15,15 +15,25 @@
  */
 package org.redisson;
 
-import java.util.Collection;
-import java.util.concurrent.TimeUnit;
-
+import org.redisson.api.Entry;
 import org.redisson.api.RBlockingDeque;
 import org.redisson.api.RFuture;
 import org.redisson.api.RedissonClient;
+import org.redisson.api.queue.DequeMoveArgs;
+import org.redisson.api.queue.DequeMoveParams;
+import org.redisson.api.queue.QueueMoveElementsArgs;
 import org.redisson.client.codec.Codec;
 import org.redisson.client.protocol.RedisCommands;
 import org.redisson.command.CommandAsyncExecutor;
+
+import java.time.Duration;
+import java.util.Collection;
+import java.util.List;
+import java.util.Map;
+import java.util.concurrent.CompletionStage;
+import java.util.concurrent.TimeUnit;
+import java.util.function.Consumer;
+import java.util.function.Function;
 
 /**
  * <p>Distributed and concurrent implementation of {@link java.util.concurrent.BlockingDeque}.
@@ -113,6 +123,16 @@ public class RedissonBlockingDeque<V> extends RedissonDeque<V> implements RBlock
     }
 
     @Override
+    public Entry<String, V> pollFromAnyWithName(Duration timeout, String... queueNames) throws InterruptedException {
+        return blockingQueue.pollFromAnyWithName(timeout, queueNames);
+    }
+
+    @Override
+    public RFuture<Entry<String, V>> pollFromAnyWithNameAsync(Duration timeout, String... queueNames) {
+        return blockingQueue.pollFromAnyWithNameAsync(timeout, queueNames);
+    }
+
+    @Override
     public RFuture<V> pollLastAndOfferFirstToAsync(String queueName, long timeout, TimeUnit unit) {
         return blockingQueue.pollLastAndOfferFirstToAsync(queueName, timeout, unit);
     }
@@ -121,12 +141,57 @@ public class RedissonBlockingDeque<V> extends RedissonDeque<V> implements RBlock
     public V pollLastAndOfferFirstTo(String queueName, long timeout, TimeUnit unit) throws InterruptedException {
         return blockingQueue.pollLastAndOfferFirstTo(queueName, timeout, unit);
     }
-    
+
+    @Override
+    public Map<String, List<V>> pollFirstFromAny(Duration duration, int count, String... queueNames) throws InterruptedException {
+        return blockingQueue.pollFirstFromAny(duration, count, queueNames);
+    }
+
+    @Override
+    public Map<String, List<V>> pollLastFromAny(Duration duration, int count, String... queueNames) throws InterruptedException {
+        return blockingQueue.pollLastFromAny(duration, count, queueNames);
+    }
+
+    @Override
+    public Entry<String, V> pollLastFromAnyWithName(Duration duration, String... queueNames) throws InterruptedException {
+        return blockingQueue.pollLastFromAnyWithName(duration, queueNames);
+    }
+
+    @Override
+    public RFuture<Map<String, List<V>>> pollFirstFromAnyAsync(Duration duration, int count, String... queueNames) {
+        return blockingQueue.pollFirstFromAnyAsync(duration, count, queueNames);
+    }
+
+    @Override
+    public RFuture<Map<String, List<V>>> pollLastFromAnyAsync(Duration duration, int count, String... queueNames) {
+        return blockingQueue.pollLastFromAnyAsync(duration, count, queueNames);
+    }
+
+    @Override
+    public RFuture<Entry<String, V>> pollLastFromAnyWithNameAsync(Duration duration, String... queueNames) {
+        return blockingQueue.pollLastFromAnyWithNameAsync(duration, queueNames);
+    }
+
     @Override
     public V takeLastAndOfferFirstTo(String queueName) throws InterruptedException {
-        return get(takeLastAndOfferFirstToAsync(queueName));
+        return commandExecutor.getInterrupted(takeLastAndOfferFirstToAsync(queueName));
     }
-    
+
+    @Override
+    public int subscribeOnElements(Consumer<V> consumer) {
+        return blockingQueue.subscribeOnElements(consumer);
+    }
+
+    @Override
+    public int subscribeOnElements(Function<V, CompletionStage<Void>> consumer) {
+        return blockingQueue.subscribeOnElements(consumer);
+    }
+
+    @Override
+    public void unsubscribe(int id) {
+        blockingQueue.unsubscribe(id);
+    }
+
     @Override
     public RFuture<V> takeLastAndOfferFirstToAsync(String queueName) {
         return pollLastAndOfferFirstToAsync(queueName, 0, TimeUnit.SECONDS);
@@ -191,7 +256,7 @@ public class RedissonBlockingDeque<V> extends RedissonDeque<V> implements RBlock
 
     @Override
     public V takeFirst() throws InterruptedException {
-        return get(takeFirstAsync());
+        return commandExecutor.getInterrupted(takeFirstAsync());
     }
 
     @Override
@@ -201,12 +266,12 @@ public class RedissonBlockingDeque<V> extends RedissonDeque<V> implements RBlock
 
     @Override
     public RFuture<V> takeLastAsync() {
-        return commandExecutor.writeAsync(getName(), codec, RedisCommands.BRPOP_VALUE, getName(), 0);
+        return commandExecutor.writeAsync(getRawName(), codec, RedisCommands.BRPOP_VALUE, getRawName(), 0);
     }
 
     @Override
     public V takeLast() throws InterruptedException {
-        return get(takeLastAsync());
+        return commandExecutor.getInterrupted(takeLastAsync());
     }
 
     @Override
@@ -216,7 +281,7 @@ public class RedissonBlockingDeque<V> extends RedissonDeque<V> implements RBlock
 
     @Override
     public V pollFirstFromAny(long timeout, TimeUnit unit, String... queueNames) throws InterruptedException {
-        return get(pollFirstFromAnyAsync(timeout, unit, queueNames));
+        return commandExecutor.getInterrupted(pollFirstFromAnyAsync(timeout, unit, queueNames));
     }
 
     @Override
@@ -226,27 +291,73 @@ public class RedissonBlockingDeque<V> extends RedissonDeque<V> implements RBlock
 
     @Override
     public V pollLastFromAny(long timeout, TimeUnit unit, String... queueNames) throws InterruptedException {
-        return get(pollLastFromAnyAsync(timeout, unit, queueNames));
+        return commandExecutor.getInterrupted(pollLastFromAnyAsync(timeout, unit, queueNames));
+    }
+
+    @Override
+    public int subscribeOnFirstElements(Consumer<V> consumer) {
+        return getServiceManager().getElementsSubscribeService()
+                .subscribeOnElements(this::takeFirstAsync, consumer);
+    }
+
+    @Override
+    public int subscribeOnLastElements(Consumer<V> consumer) {
+        return getServiceManager().getElementsSubscribeService()
+                .subscribeOnElements(this::takeLastAsync, consumer);
+    }
+
+    @Override
+    public int subscribeOnFirstElements(Function<V, CompletionStage<Void>> consumer) {
+        return getServiceManager().getElementsSubscribeService()
+                .subscribeOnElements(this::takeFirstAsync, consumer);
+    }
+
+    @Override
+    public int subscribeOnLastElements(Function<V, CompletionStage<Void>> consumer) {
+        return getServiceManager().getElementsSubscribeService()
+                .subscribeOnElements(this::takeLastAsync, consumer);
     }
 
     @Override
     public RFuture<V> pollLastFromAnyAsync(long timeout, TimeUnit unit, String... queueNames) {
-        return commandExecutor.pollFromAnyAsync(getName(), codec, RedisCommands.BRPOP_VALUE, toSeconds(timeout, unit), queueNames);
+        return commandExecutor.pollFromAnyAsync(getRawName(), codec, RedisCommands.BRPOP_VALUE, toSeconds(timeout, unit), queueNames);
     }
 
     @Override
     public V pollFirst(long timeout, TimeUnit unit) throws InterruptedException {
-        return get(pollFirstAsync(timeout, unit));
+        return commandExecutor.getInterrupted(pollFirstAsync(timeout, unit));
     }
 
     @Override
     public RFuture<V> pollLastAsync(long timeout, TimeUnit unit) {
-        return commandExecutor.writeAsync(getName(), codec, RedisCommands.BRPOP_VALUE, getName(), toSeconds(timeout, unit));
+        return commandExecutor.writeAsync(getRawName(), codec, RedisCommands.BRPOP_VALUE, getRawName(), toSeconds(timeout, unit));
     }
 
     @Override
     public V pollLast(long timeout, TimeUnit unit) throws InterruptedException {
-        return get(pollLastAsync(timeout, unit));
-   }
+        return commandExecutor.getInterrupted(pollLastAsync(timeout, unit));
+    }
 
+    @Override
+    public V move(Duration timeout, DequeMoveArgs args) {
+        return get(moveAsync(timeout, args));
+    }
+
+    @Override
+    public RFuture<V> moveAsync(Duration timeout, DequeMoveArgs args) {
+        DequeMoveParams pp = (DequeMoveParams) args;
+        return commandExecutor.writeAsync(getRawName(), codec, RedisCommands.BLMOVE, getRawName(),
+                                                pp.getDestName(), pp.getSourceDirection(), pp.getDestDirection(),
+                                                toSeconds(timeout.getSeconds(), TimeUnit.SECONDS));
+    }
+
+    @Override
+    public List<V> move(Duration timeout, QueueMoveElementsArgs args) {
+        return blockingQueue.move(timeout, args);
+    }
+
+    @Override
+    public RFuture<List<V>> moveAsync(Duration timeout, QueueMoveElementsArgs args) {
+        return blockingQueue.moveAsync(timeout, args);
+    }
 }

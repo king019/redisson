@@ -1,5 +1,5 @@
 /**
- * Copyright (c) 2013-2019 Nikita Koksharov
+ * Copyright (c) 2013-2026 Nikita Koksharov
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -33,36 +33,15 @@ public class PubSubPatternStatusListener implements RedisPubSubListener<Object> 
         return name;
     }
 
+    public PubSubPatternStatusListener(PubSubPatternStatusListener l) {
+        this.listener = l.listener;
+        this.name = l.name;
+    }
+
     public PubSubPatternStatusListener(PatternStatusListener listener, String name) {
         super();
         this.listener = listener;
         this.name = name;
-    }
-
-    @Override
-    @SuppressWarnings("AvoidInlineConditionals")
-    public int hashCode() {
-        final int prime = 31;
-        int result = 1;
-        result = prime * result + ((listener == null) ? 0 : listener.hashCode());
-        return result;
-    }
-
-    @Override
-    public boolean equals(Object obj) {
-        if (this == obj)
-            return true;
-        if (obj == null)
-            return false;
-        if (getClass() != obj.getClass())
-            return false;
-        PubSubPatternStatusListener other = (PubSubPatternStatusListener) obj;
-        if (listener == null) {
-            if (other.listener != null)
-                return false;
-        } else if (!listener.equals(other.listener))
-            return false;
-        return true;
     }
 
     @Override
@@ -74,16 +53,14 @@ public class PubSubPatternStatusListener implements RedisPubSubListener<Object> 
     }
 
     @Override
-    public boolean onStatus(PubSubType type, CharSequence channel) {
+    public void onStatus(PubSubType type, CharSequence channel) {
         if (channel.toString().equals(name)) {
             if (type == PubSubType.PSUBSCRIBE) {
                 listener.onPSubscribe(channel.toString());
             } else if (type == PubSubType.PUNSUBSCRIBE) {
                 listener.onPUnsubscribe(channel.toString());
             }
-            return true;
         }
-        return false;
     }
 
 }

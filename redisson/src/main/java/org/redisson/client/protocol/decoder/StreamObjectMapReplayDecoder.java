@@ -1,5 +1,5 @@
 /**
- * Copyright (c) 2013-2019 Nikita Koksharov
+ * Copyright (c) 2013-2026 Nikita Koksharov
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -20,6 +20,7 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 
+import org.redisson.client.codec.Codec;
 import org.redisson.client.handler.State;
 import org.redisson.client.protocol.Decoder;
 
@@ -28,7 +29,7 @@ import org.redisson.client.protocol.Decoder;
  * @author Nikita Koksharov
  *
  */
-public class StreamObjectMapReplayDecoder extends ObjectMapReplayDecoder {
+public class StreamObjectMapReplayDecoder extends ObjectMapReplayDecoder<Object, Object> {
 
     private Decoder<Object> codec;
     
@@ -42,8 +43,9 @@ public class StreamObjectMapReplayDecoder extends ObjectMapReplayDecoder {
 
     @Override
     public Map<Object, Object> decode(List<Object> parts, State state) {
-        if (parts.get(0) == null
-                || (parts.get(0) instanceof List && ((List) parts.get(0)).isEmpty())) {
+        if (parts.isEmpty()
+                || parts.get(0) == null
+                    || (parts.get(0) instanceof List && ((List) parts.get(0)).isEmpty())) {
             parts.clear();
             return Collections.emptyMap();
         }
@@ -59,11 +61,11 @@ public class StreamObjectMapReplayDecoder extends ObjectMapReplayDecoder {
     }
 
     @Override
-    public Decoder<Object> getDecoder(int paramNum, State state) {
-        if (codec != null) {
-            return codec;
+    public Decoder<Object> getDecoder(Codec codec, int paramNum, State state, long size) {
+        if (this.codec != null) {
+            return this.codec;
         }
-        return null;
+        return super.getDecoder(codec, paramNum, state, size);
     }
 
 }

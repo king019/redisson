@@ -1,5 +1,5 @@
 /**
- * Copyright (c) 2013-2019 Nikita Koksharov
+ * Copyright (c) 2013-2026 Nikita Koksharov
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -15,12 +15,16 @@
  */
 package org.redisson.connection;
 
-import java.net.URI;
-
-import org.redisson.api.RFuture;
+import org.redisson.client.RedisClient;
 import org.redisson.client.RedisConnection;
 import org.redisson.client.protocol.RedisCommand;
 import org.redisson.config.MasterSlaveServersConfig;
+import org.redisson.config.ReadMode;
+import org.redisson.misc.RedisURI;
+
+import java.util.Collection;
+import java.util.Collections;
+import java.util.concurrent.CompletableFuture;
 
 /**
  * 
@@ -34,13 +38,21 @@ public class SingleEntry extends MasterSlaveEntry {
     }
 
     @Override
-    public RFuture<RedisConnection> connectionReadOp(RedisCommand<?> command, URI addr) {
+    public CompletableFuture<RedisConnection> connectionReadOp(RedisCommand<?> command, RedisURI addr) {
         return super.connectionWriteOp(command);
     }
 
     @Override
-    public RFuture<RedisConnection> connectionReadOp(RedisCommand<?> command) {
+    public CompletableFuture<RedisConnection> connectionReadOp(RedisCommand<?> command, boolean trackChanges) {
+        if (trackChanges) {
+            return super.trackedConnectionWriteOp(command);
+        }
         return super.connectionWriteOp(command);
+    }
+
+    @Override
+    public CompletableFuture<RedisConnection> connectionReadOp(RedisCommand<?> command, boolean trackChanges, ReadMode override) {
+        return connectionReadOp(command, trackChanges);
     }
 
     @Override
@@ -48,4 +60,29 @@ public class SingleEntry extends MasterSlaveEntry {
         super.releaseWrite(connection);
     }
 
+    @Override
+    public void releaseRead(RedisConnection connection, ReadMode override) {
+        super.releaseWrite(connection);
+    }
+
+    @Override
+    public Collection<ClientConnectionsEntry> getAllEntries() {
+        return Collections.singletonList(masterEntry);
+    }
+
+    @Override
+    public ClientConnectionsEntry getEntry(RedisClient redisClient) {
+        if (masterEntry.getClient().equals(redisClient)) {
+            return masterEntry;
+        }
+        return null;
+    }
+
+    @Override
+    public ClientConnectionsEntry getEntry(RedisURI addr) {
+        if (addr.equals(masterEntry.getClient().getAddr())) {
+            return masterEntry;
+        }
+        return null;
+    }
 }

@@ -1,5 +1,5 @@
 /**
- * Copyright (c) 2013-2019 Nikita Koksharov
+ * Copyright (c) 2013-2026 Nikita Koksharov
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -15,50 +15,49 @@
  */
 package org.redisson.reactive;
 
-import java.util.function.Supplier;
-
 import org.redisson.api.BatchOptions;
 import org.redisson.api.BatchResult;
 import org.redisson.api.RFuture;
-import org.redisson.api.RedissonReactiveClient;
 import org.redisson.client.codec.Codec;
 import org.redisson.client.protocol.RedisCommand;
-import org.redisson.command.CommandAsyncExecutor;
+import org.redisson.command.BatchService;
 import org.redisson.command.CommandBatchService;
 import org.redisson.connection.ConnectionManager;
 import org.redisson.connection.NodeSource;
-import org.redisson.misc.RPromise;
-
+import org.redisson.liveobject.core.RedissonObjectBuilder;
+import org.redisson.misc.CompletableFutureWrapper;
 import reactor.core.publisher.Mono;
+
+import java.util.concurrent.Callable;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.CompletionStage;
+import java.util.concurrent.atomic.AtomicBoolean;
 
 /**
  * 
  * @author Nikita Koksharov
  *
  */
-public class CommandReactiveBatchService extends CommandReactiveService {
+public class CommandReactiveBatchService extends CommandReactiveService implements BatchService {
 
     private final CommandBatchService batchService;
 
-    public CommandReactiveBatchService(ConnectionManager connectionManager, BatchOptions options) {
-        super(connectionManager);
-        batchService = new CommandBatchService(connectionManager, options);
+    public CommandReactiveBatchService(ConnectionManager connectionManager, CommandReactiveExecutor commandExecutor, BatchOptions options) {
+        super(connectionManager, commandExecutor.getObjectBuilder());
+        batchService = new CommandBatchService(commandExecutor, options, RedissonObjectBuilder.ReferenceType.REACTIVE);
     }
 
     @Override
-    public <R> Mono<R> reactive(Supplier<RFuture<R>> supplier) {
-        Mono<R> mono = super.reactive(new Supplier<RFuture<R>>() {
-            volatile RFuture<R> future;
+    public <R> Mono<R> reactive(Callable<CompletionStage<R>> supplier) {
+        Mono<R> mono = super.reactive(new Callable<CompletionStage<R>>() {
+            final CompletableFuture<R> future = new CompletableFuture<>();
+            final AtomicBoolean lock = new AtomicBoolean();
             @Override
-            public RFuture<R> get() {
-                if (future == null) {
-                    synchronized (this) {
-                        if (future == null) {
-                            future = supplier.get();
-                        }
-                    }
+            public RFuture<R> call() throws Exception {
+                if (lock.compareAndSet(false, true)) {
+                    transfer(supplier.call().toCompletableFuture(), future);
                 }
-                return future;
+                return new CompletableFutureWrapper<>(future);
             }
         });
         mono.subscribe();
@@ -66,24 +65,26 @@ public class CommandReactiveBatchService extends CommandReactiveService {
     }
     
     @Override
-    protected <R> RPromise<R> createPromise() {
+    protected <R> CompletableFuture<R> createPromise() {
         return batchService.createPromise();
     }
     
     @Override
-    public <V, R> void async(boolean readOnlyMode, NodeSource nodeSource,
-            Codec codec, RedisCommand<V> command, Object[] params, RPromise<R> mainPromise, int attempt, boolean ignoreRedirect) {
-        batchService.async(readOnlyMode, nodeSource, codec, command, params, mainPromise, attempt, ignoreRedirect);
+    public <V, R> RFuture<R> async(boolean readOnlyMode, NodeSource nodeSource,
+                                        Codec codec, RedisCommand<V> command, Object[] params, boolean ignoreRedirect, boolean noRetry) {
+        return batchService.async(readOnlyMode, nodeSource, codec, command, params, ignoreRedirect, noRetry);
     }
 
-    public RFuture<BatchResult<?>> executeAsync(BatchOptions options) {
-        return batchService.executeAsync(options);
+    public RFuture<BatchResult<?>> executeAsync() {
+        return batchService.executeAsync();
     }
 
     @Override
-    public CommandAsyncExecutor enableRedissonReferenceSupport(RedissonReactiveClient redissonReactive) {
-        batchService.enableRedissonReferenceSupport(redissonReactive);
-        return super.enableRedissonReferenceSupport(redissonReactive);
+    protected boolean isEvalCacheActive() {
+        return false;
     }
-    
+
+    public RFuture<Void> discardAsync() {
+        return batchService.discardAsync();
+    }
 }

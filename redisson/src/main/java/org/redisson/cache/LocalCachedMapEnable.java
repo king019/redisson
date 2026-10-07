@@ -1,5 +1,5 @@
 /**
- * Copyright (c) 2013-2019 Nikita Koksharov
+ * Copyright (c) 2013-2026 Nikita Koksharov
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -26,11 +26,20 @@ public class LocalCachedMapEnable implements Serializable {
 
     private byte[][] keyHashes;
     private String requestId;
+    private boolean enableCache;
 
-    public LocalCachedMapEnable(String requestId, byte[][] keyHashes) {
+    public boolean isEnableCache() {
+        return enableCache;
+    }
+
+    public LocalCachedMapEnable() {
+    }
+
+    public LocalCachedMapEnable(String requestId, byte[][] keyHashes, boolean enableCache) {
         super();
         this.requestId = requestId;
         this.keyHashes = keyHashes;
+        this.enableCache = enableCache;
     }
     
     public String getRequestId() {

@@ -1,5 +1,5 @@
 /**
- * Copyright (c) 2013-2019 Nikita Koksharov
+ * Copyright (c) 2013-2026 Nikita Koksharov
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -15,21 +15,18 @@
  */
 package org.redisson.connection.balancer;
 
-import java.net.InetSocketAddress;
-import java.net.URI;
-import java.util.ArrayList;
+import org.redisson.client.protocol.RedisCommand;
+import org.redisson.misc.WrappedLock;
+import org.redisson.connection.ClientConnectionsEntry;
+import org.redisson.misc.RedisURI;
+
 import java.util.HashMap;
-import java.util.HashSet;
-import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
 import java.util.Map.Entry;
-import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicInteger;
-
-import org.redisson.connection.ClientConnectionsEntry;
-import org.redisson.misc.URIBuilder;
+import java.util.stream.Collectors;
 
 /**
  * Weighted Round Robin balancer.
@@ -65,9 +62,11 @@ public class WeightedRoundRobinBalancer implements LoadBalancer {
 
     private final AtomicInteger index = new AtomicInteger(-1);
 
-    private final Map<InetSocketAddress, WeightEntry> weights = new ConcurrentHashMap<>();
+    private final Map<RedisURI, WeightEntry> weights = new ConcurrentHashMap<>();
 
     private final int defaultWeight;
+
+    private final WrappedLock lock = new WrappedLock();
 
     /**
      * Creates weighted round robin balancer.
@@ -77,12 +76,11 @@ public class WeightedRoundRobinBalancer implements LoadBalancer {
      */
     public WeightedRoundRobinBalancer(Map<String, Integer> weights, int defaultWeight) {
         for (Entry<String, Integer> entry : weights.entrySet()) {
-            URI uri = URIBuilder.create(entry.getKey());
-            InetSocketAddress addr = new InetSocketAddress(uri.getHost(), uri.getPort());
+            RedisURI uri = new RedisURI(entry.getKey());
             if (entry.getValue() <= 0) {
                 throw new IllegalArgumentException("Weight can't be less than or equal zero");
             }
-            this.weights.put(addr, new WeightEntry(entry.getValue()));
+            this.weights.put(uri, new WeightEntry(entry.getValue()));
         }
         if (defaultWeight <= 0) {
             throw new IllegalArgumentException("Weight can't be less than or equal zero");
@@ -91,40 +89,24 @@ public class WeightedRoundRobinBalancer implements LoadBalancer {
         this.defaultWeight = defaultWeight;
     }
 
-    private Set<InetSocketAddress> getAddresses(List<ClientConnectionsEntry> clients) {
-        Set<InetSocketAddress> result = new HashSet<>();
-        for (ClientConnectionsEntry entry : clients) {
-            if (entry.isFreezed()) {
-                continue;
-            }
-            result.add(entry.getClient().getAddr());
-        }
-        return result;
+    @Override
+    public ClientConnectionsEntry getEntry(List<ClientConnectionsEntry> clients) {
+        return getEntry(clients, null);
     }
 
     @Override
-    public ClientConnectionsEntry getEntry(List<ClientConnectionsEntry> clients) {
-        Set<InetSocketAddress> addresses = getAddresses(clients);
-
-        if (!addresses.equals(weights.keySet())) {
-            Set<InetSocketAddress> newAddresses = new HashSet<>(addresses);
-            newAddresses.removeAll(weights.keySet());
-            for (InetSocketAddress addr : newAddresses) {
-                weights.put(addr, new WeightEntry(defaultWeight));
+    public ClientConnectionsEntry getEntry(List<ClientConnectionsEntry> clients, RedisCommand<?> redisCommand) {
+        List<ClientConnectionsEntry> usedClients = findClients(clients, weights);
+        for (ClientConnectionsEntry e : clients) {
+            if (usedClients.contains(e)) {
+                continue;
             }
+            weights.put(e.getClient().getConfig().getAddress(), new WeightEntry(defaultWeight));
         }
 
-        Map<InetSocketAddress, WeightEntry> weightsCopy = new HashMap<>(weights);
-
-
-        synchronized (this) {
-            for (Iterator<WeightEntry> iterator = weightsCopy.values().iterator(); iterator.hasNext();) {
-                WeightEntry entry = iterator.next();
-
-                if (entry.isWeightCounterZero()) {
-                    iterator.remove();
-                }
-            }
+        return lock.execute(() -> {
+            Map<RedisURI, WeightEntry> weightsCopy = new HashMap<>(weights);
+            weightsCopy.values().removeIf(WeightEntry::isWeightCounterZero);
 
             if (weightsCopy.isEmpty()) {
                 for (WeightEntry entry : weights.values()) {
@@ -148,26 +130,30 @@ public class WeightedRoundRobinBalancer implements LoadBalancer {
                 clientsCopy = findClients(clients, weightsCopy);
             }
 
-            int ind = Math.abs(index.incrementAndGet() % clientsCopy.size());
+            int ind = Math.floorMod(index.incrementAndGet(), clientsCopy.size());
             ClientConnectionsEntry entry = clientsCopy.get(ind);
-            WeightEntry weightEntry = weights.get(entry.getClient().getAddr());
-            weightEntry.decWeightCounter();
-            return entry;
-        }
-    }
-
-    private List<ClientConnectionsEntry> findClients(List<ClientConnectionsEntry> clients, Map<InetSocketAddress, WeightEntry> weightsCopy) {
-        List<ClientConnectionsEntry> clientsCopy = new ArrayList<>();
-        for (InetSocketAddress addr : weightsCopy.keySet()) {
-            for (ClientConnectionsEntry clientConnectionsEntry : clients) {
-                if (clientConnectionsEntry.getClient().getAddr().equals(addr)
-                        && !clientConnectionsEntry.isFreezed()) {
-                    clientsCopy.add(clientConnectionsEntry);
+            for (Entry<RedisURI, WeightEntry> weightEntry : weightsCopy.entrySet()) {
+                if (weightEntry.getKey().equals(entry.getClient().getAddr())) {
+                    weightEntry.getValue().decWeightCounter();
                     break;
                 }
             }
-        }
-        return clientsCopy;
+            return entry;
+        });
+    }
+
+    private List<ClientConnectionsEntry> findClients(List<ClientConnectionsEntry> clients,
+                                                        Map<RedisURI, WeightEntry> weightsCopy) {
+        return clients.stream()
+                        .filter(e -> {
+                            for (RedisURI redisURI : weightsCopy.keySet()) {
+                                if (redisURI.equals(e.getClient().getAddr())) {
+                                    return true;
+                                }
+                            }
+                            return false;
+                        })
+                        .collect(Collectors.toList());
     }
 
 }

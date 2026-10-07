@@ -1,5 +1,5 @@
 /**
- * Copyright (c) 2013-2019 Nikita Koksharov
+ * Copyright (c) 2013-2026 Nikita Koksharov
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -15,10 +15,11 @@
  */
 package org.redisson.client.protocol;
 
+import org.redisson.misc.LogHelper;
+
 import java.util.ArrayList;
 import java.util.List;
-
-import org.redisson.misc.RPromise;
+import java.util.concurrent.CompletableFuture;
 
 /**
  * 
@@ -29,25 +30,22 @@ public class CommandsData implements QueueCommand {
 
     private final List<CommandData<?, ?>> commands;
     private final List<CommandData<?, ?>> attachedCommands;
-    private final RPromise<Void> promise;
+    private final CompletableFuture<Void> promise;
     private final boolean skipResult;
     private final boolean atomic;
     private final boolean queued;
+    private final boolean syncSlaves;
 
-    public CommandsData(RPromise<Void> promise, List<CommandData<?, ?>> commands, boolean queued) {
-        this(promise, commands, null, false, false, queued);
+    public CommandsData(CompletableFuture<Void> promise, List<CommandData<?, ?>> commands, boolean queued, boolean syncSlaves) {
+        this(promise, commands, null, false, false, queued, syncSlaves);
     }
     
-    public CommandsData(RPromise<Void> promise, List<CommandData<?, ?>> commands, List<CommandData<?, ?>> attachedCommands) {
-        this(promise, commands, attachedCommands, false, false, true);
+    public CommandsData(CompletableFuture<Void> promise, List<CommandData<?, ?>> commands, boolean skipResult, boolean atomic, boolean queued, boolean syncSlaves) {
+        this(promise, commands, null, skipResult, atomic, queued, syncSlaves);
     }
     
-    public CommandsData(RPromise<Void> promise, List<CommandData<?, ?>> commands, boolean skipResult, boolean atomic, boolean queued) {
-        this(promise, commands, null, skipResult, atomic, queued);
-    }
-    
-    public CommandsData(RPromise<Void> promise, List<CommandData<?, ?>> commands, List<CommandData<?, ?>> attachedCommands, 
-            boolean skipResult, boolean atomic, boolean queued) {
+    public CommandsData(CompletableFuture<Void> promise, List<CommandData<?, ?>> commands, List<CommandData<?, ?>> attachedCommands,
+            boolean skipResult, boolean atomic, boolean queued, boolean syncSlaves) {
         super();
         this.promise = promise;
         this.commands = commands;
@@ -55,9 +53,14 @@ public class CommandsData implements QueueCommand {
         this.atomic = atomic;
         this.attachedCommands = attachedCommands;
         this.queued = queued;
+        this.syncSlaves = syncSlaves;
     }
 
-    public RPromise<Void> getPromise() {
+    public boolean isSyncSlaves() {
+        return syncSlaves;
+    }
+
+    public CompletableFuture<Void> getPromise() {
         return promise;
     }
 
@@ -94,12 +97,19 @@ public class CommandsData implements QueueCommand {
 
     @Override
     public boolean tryFailure(Throwable cause) {
-        return promise.tryFailure(cause);
+        return promise.completeExceptionally(cause);
     }
 
     @Override
     public String toString() {
-        return "CommandsData [commands=" + commands + "]";
+        return "CommandsData{" +
+                "commands=" + LogHelper.toString(commands) +
+                ", promise=" + promise +
+                ", skipResult=" + skipResult +
+                ", atomic=" + atomic +
+                ", queued=" + queued +
+                ", syncSlaves=" + syncSlaves +
+                '}';
     }
 
     @Override

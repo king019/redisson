@@ -1,5 +1,5 @@
 /**
- * Copyright (c) 2013-2019 Nikita Koksharov
+ * Copyright (c) 2013-2026 Nikita Koksharov
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -15,19 +15,15 @@
  */
 package org.redisson.rx;
 
-import java.util.concurrent.atomic.AtomicBoolean;
-import java.util.concurrent.atomic.AtomicLong;
-
+import io.reactivex.rxjava3.core.Flowable;
+import io.reactivex.rxjava3.core.Single;
+import io.reactivex.rxjava3.functions.Consumer;
+import io.reactivex.rxjava3.processors.ReplayProcessor;
 import org.reactivestreams.Publisher;
 import org.redisson.api.RFuture;
 
-import io.reactivex.Flowable;
-import io.reactivex.Single;
-import io.reactivex.functions.Action;
-import io.reactivex.functions.Consumer;
-import io.reactivex.functions.LongConsumer;
-import io.reactivex.internal.operators.flowable.FlowableInternalHelper;
-import io.reactivex.processors.ReplayProcessor;
+import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicLong;
 
 /**
  * 
@@ -42,48 +38,34 @@ public abstract class PublisherAdder<V> {
     public Single<Boolean> addAll(Publisher<? extends V> c) {
         final Flowable<? extends V> cc = Flowable.fromPublisher(c);
         final ReplayProcessor<Boolean> p = ReplayProcessor.create();
-        return p.doOnRequest(new LongConsumer() {
-            @Override
-            public void accept(long t) throws Exception {
-                final AtomicBoolean completed = new AtomicBoolean();
-                final AtomicLong values = new AtomicLong();
-                final AtomicBoolean lastSize = new AtomicBoolean();
-                
-                cc.subscribe(new Consumer<V>() {
-                    @Override
-                    public void accept(V t) throws Exception {
-                        values.getAndIncrement();
-                        add(t).onComplete((res, e) -> {
-                            if (e != null) {
-                                p.onError(e);
-                                return;
-                            }
-                            
-                            if (res) {
-                                lastSize.set(true);
-                            }
-                            if (values.decrementAndGet() == 0 && completed.get()) {
-                                p.onNext(lastSize.get());
-                                p.onComplete();
-                            }
-                        });
+        return p.doOnRequest(t -> {
+            final AtomicBoolean completed = new AtomicBoolean();
+            final AtomicLong values = new AtomicLong();
+            final AtomicBoolean lastSize = new AtomicBoolean();
+
+            cc.subscribe((Consumer<V>) t2 -> {
+                values.getAndIncrement();
+                add(t2).whenComplete((res, e) -> {
+                    if (e != null) {
+                        p.onError(e);
+                        return;
                     }
-                }, new Consumer<Throwable>() {
-                    @Override
-                    public void accept(Throwable t) throws Exception {
-                        p.onError(t);
+
+                    if (res) {
+                        lastSize.set(true);
                     }
-                }, new Action() {
-                    @Override
-                    public void run() throws Exception {
-                        completed.set(true);
-                        if (values.get() == 0) {
-                            p.onNext(lastSize.get());
-                            p.onComplete();
-                        }
+                    if (values.decrementAndGet() == 0 && completed.get()) {
+                        p.onNext(lastSize.get());
+                        p.onComplete();
                     }
-                }, FlowableInternalHelper.RequestMax.INSTANCE);                
-            }
+                });
+            }, t1 -> p.onError(t1), () -> {
+                completed.set(true);
+                if (values.get() == 0) {
+                    p.onNext(lastSize.get());
+                    p.onComplete();
+                }
+            });
         }).singleOrError();
     }
 

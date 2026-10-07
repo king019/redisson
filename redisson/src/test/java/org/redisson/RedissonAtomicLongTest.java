@@ -1,12 +1,93 @@
 package org.redisson;
 
+import org.junit.jupiter.api.Assertions;
+import org.junit.jupiter.api.Test;
+import org.redisson.api.RAtomicLong;
+import org.redisson.api.atomic.CompareAndDeleteArgs;
+import org.redisson.api.atomic.LongIncrementArgs;
+
+import java.time.Duration;
+
 import static org.assertj.core.api.Assertions.assertThat;
 
-import org.junit.Assert;
-import org.junit.Test;
-import org.redisson.api.RAtomicLong;
+public class RedissonAtomicLongTest extends RedisDockerTest {
 
-public class RedissonAtomicLongTest extends BaseTest {
+    @Test
+    public void testCompareAndDelete() {
+        RAtomicLong al = redisson.getAtomicLong("test");
+        al.set(10);
+
+        // less - value is 10, threshold is 5, 10 < 5 is false
+        assertThat(al.compareAndDelete(CompareAndDeleteArgs.less(5))).isFalse();
+        assertThat(al.isExists()).isTrue();
+        // less - value is 10, threshold is 15, 10 < 15 is true
+        assertThat(al.compareAndDelete(CompareAndDeleteArgs.less(15))).isTrue();
+        assertThat(al.isExists()).isFalse();
+
+        // lessOrEqual
+        al.set(10);
+        assertThat(al.compareAndDelete(CompareAndDeleteArgs.lessOrEqual(9))).isFalse();
+        assertThat(al.compareAndDelete(CompareAndDeleteArgs.lessOrEqual(10))).isTrue();
+        assertThat(al.isExists()).isFalse();
+
+        // greater - value is 10, threshold is 15, 10 > 15 is false
+        al.set(10);
+        assertThat(al.compareAndDelete(CompareAndDeleteArgs.greater(15))).isFalse();
+        assertThat(al.isExists()).isTrue();
+        // greater - value is 10, threshold is 5, 10 > 5 is true
+        assertThat(al.compareAndDelete(CompareAndDeleteArgs.greater(5))).isTrue();
+        assertThat(al.isExists()).isFalse();
+
+        // greaterOrEqual
+        al.set(10);
+        assertThat(al.compareAndDelete(CompareAndDeleteArgs.greaterOrEqual(11))).isFalse();
+        assertThat(al.compareAndDelete(CompareAndDeleteArgs.greaterOrEqual(10))).isTrue();
+        assertThat(al.isExists()).isFalse();
+
+        // equal
+        al.set(10);
+        assertThat(al.compareAndDelete(CompareAndDeleteArgs.equal(11))).isFalse();
+        assertThat(al.compareAndDelete(CompareAndDeleteArgs.equal(10))).isTrue();
+        assertThat(al.isExists()).isFalse();
+
+        // notEqual
+        al.set(10);
+        assertThat(al.compareAndDelete(CompareAndDeleteArgs.notEqual(10))).isFalse();
+        assertThat(al.compareAndDelete(CompareAndDeleteArgs.notEqual(11))).isTrue();
+        assertThat(al.isExists()).isFalse();
+
+        // non-existent key - nothing to delete
+        assertThat(al.compareAndDelete(CompareAndDeleteArgs.equal(0))).isFalse();
+        assertThat(al.compareAndDelete(CompareAndDeleteArgs.less(0))).isFalse();
+    }
+
+    @Test
+    public void testSetIfLess() {
+        RAtomicLong al = redisson.getAtomicLong("test");
+        assertThat(al.setIfLess(0, 1)).isFalse();
+        assertThat(al.get()).isEqualTo(0);
+        
+        al.set(12);
+        assertThat(al.setIfLess(13, 1)).isTrue();
+        assertThat(al.get()).isEqualTo(1);
+    }
+    
+    @Test
+    public void testSetIfGreater() {
+        RAtomicLong al = redisson.getAtomicLong("test");
+        assertThat(al.setIfLess(0, 1)).isFalse();
+        assertThat(al.get()).isEqualTo(0);
+        
+        al.set(12);
+        assertThat(al.setIfGreater(11, 1)).isTrue();
+        assertThat(al.get()).isEqualTo(1);
+    }
+    
+    @Test
+    public void testGetAndSet() {
+        RAtomicLong al = redisson.getAtomicLong("test");
+        Assertions.assertEquals(0, al.getAndSet(12));
+    }
 
     @Test
     public void testGetZero() {
@@ -28,13 +109,13 @@ public class RedissonAtomicLongTest extends BaseTest {
     @Test
     public void testCompareAndSetZero() {
         RAtomicLong al = redisson.getAtomicLong("test");
-        Assert.assertTrue(al.compareAndSet(0, 2));
-        Assert.assertEquals(2, al.get());
+        Assertions.assertTrue(al.compareAndSet(0, 2));
+        Assertions.assertEquals(2, al.get());
 
         RAtomicLong al2 = redisson.getAtomicLong("test1");
         al2.set(0);
-        Assert.assertTrue(al2.compareAndSet(0, 2));
-        Assert.assertEquals(2, al2.get());
+        Assertions.assertTrue(al2.compareAndSet(0, 2));
+        Assertions.assertEquals(2, al2.get());
 
     }
 
@@ -42,53 +123,83 @@ public class RedissonAtomicLongTest extends BaseTest {
     @Test
     public void testCompareAndSet() {
         RAtomicLong al = redisson.getAtomicLong("test");
-        Assert.assertFalse(al.compareAndSet(-1, 2));
-        Assert.assertEquals(0, al.get());
-        Assert.assertTrue(al.compareAndSet(0, 2));
-        Assert.assertEquals(2, al.get());
+        Assertions.assertFalse(al.compareAndSet(-1, 2));
+        Assertions.assertEquals(0, al.get());
+        Assertions.assertTrue(al.compareAndSet(0, 2));
+        Assertions.assertEquals(2, al.get());
     }
 
     @Test
     public void testSetThenIncrement() {
         RAtomicLong al = redisson.getAtomicLong("test");
         al.set(2);
-        Assert.assertEquals(2, al.getAndIncrement());
-        Assert.assertEquals(3, al.get());
+        Assertions.assertEquals(2, al.getAndIncrement());
+        Assertions.assertEquals(3, al.get());
     }
 
     @Test
     public void testIncrementAndGet() {
         RAtomicLong al = redisson.getAtomicLong("test");
-        Assert.assertEquals(1, al.incrementAndGet());
-        Assert.assertEquals(1, al.get());
+        Assertions.assertEquals(1, al.incrementAndGet());
+        Assertions.assertEquals(1, al.get());
+    }
+
+    @Test
+    public void testIncrementAndGetArgs() {
+        RAtomicLong al = redisson.getAtomicLong("test");
+
+        assertThat(al.incrementAndGet(LongIncrementArgs.by(10))).isEqualTo(10);
+        assertThat(al.incrementAndGet(LongIncrementArgs.by(5).upperBound(12).saturate())).isEqualTo(12);
+        assertThat(al.incrementAndGet(LongIncrementArgs.by(5).upperBound(12))).isEqualTo(12);
+        assertThat(al.get()).isEqualTo(12);
+        assertThat(al.incrementAndGet(LongIncrementArgs.by(-20).lowerBound(0).saturate())).isZero();
+    }
+
+    @Test
+    public void testIncrementAndGetArgsExpiration() {
+        RAtomicLong al = redisson.getAtomicLong("test");
+
+        assertThat(al.incrementAndGet(LongIncrementArgs.defaults()
+                .timeToLive(Duration.ofSeconds(10))
+                .expireIfNotSet())).isEqualTo(1);
+        long ttl = al.remainTimeToLive();
+        assertThat(ttl).isGreaterThan(0);
+
+        assertThat(al.incrementAndGet(LongIncrementArgs.defaults()
+                .timeToLive(Duration.ofSeconds(60))
+                .expireIfNotSet())).isEqualTo(2);
+        assertThat(al.remainTimeToLive()).isLessThanOrEqualTo(ttl);
+
+        assertThat(al.incrementAndGet(LongIncrementArgs.defaults().persist())).isEqualTo(3);
+        assertThat(al.remainTimeToLive()).isEqualTo(-1);
     }
 
     @Test
     public void testGetAndIncrement() {
         RAtomicLong al = redisson.getAtomicLong("test");
-        Assert.assertEquals(0, al.getAndIncrement());
-        Assert.assertEquals(1, al.get());
+        Assertions.assertEquals(0, al.getAndIncrement());
+        Assertions.assertEquals(1, al.get());
     }
 
     @Test
     public void test() {
         RAtomicLong al = redisson.getAtomicLong("test");
-        Assert.assertEquals(0, al.get());
-        Assert.assertEquals(0, al.getAndIncrement());
-        Assert.assertEquals(1, al.get());
-        Assert.assertEquals(1, al.getAndDecrement());
-        Assert.assertEquals(0, al.get());
-        Assert.assertEquals(0, al.getAndIncrement());
-        Assert.assertEquals(1, al.getAndSet(12));
-        Assert.assertEquals(12, al.get());
+        Assertions.assertEquals(0, al.get());
+        Assertions.assertEquals(0, al.getAndIncrement());
+        Assertions.assertEquals(1, al.get());
+        Assertions.assertEquals(1, al.getAndDecrement());
+        Assertions.assertEquals(0, al.get());
+        Assertions.assertEquals(0, al.getAndIncrement());
+        Assertions.assertEquals(1, al.getAndSet(12));
+        Assertions.assertEquals(12, al.get());
         al.set(1);
 
         long state = redisson.getAtomicLong("test").get();
-        Assert.assertEquals(1, state);
+        Assertions.assertEquals(1, state);
         al.set(Long.MAX_VALUE - 1000);
 
         long newState = redisson.getAtomicLong("test").get();
-        Assert.assertEquals(Long.MAX_VALUE - 1000, newState);
+        Assertions.assertEquals(Long.MAX_VALUE - 1000, newState);
     }
 
 }

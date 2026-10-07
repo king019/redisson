@@ -1,5 +1,5 @@
 /**
- * Copyright (c) 2013-2019 Nikita Koksharov
+ * Copyright (c) 2013-2026 Nikita Koksharov
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -17,6 +17,7 @@ package org.redisson.client.protocol.decoder;
 
 import java.util.List;
 
+import org.redisson.client.codec.Codec;
 import org.redisson.client.codec.StringCodec;
 import org.redisson.client.handler.State;
 import org.redisson.client.protocol.Decoder;
@@ -28,7 +29,7 @@ import org.redisson.client.protocol.Decoder;
  */
 public class ListObjectDecoder<T> implements MultiDecoder<T> {
 
-    private int index;
+    private final int index;
     
     public ListObjectDecoder(int index) {
         super();
@@ -36,11 +37,11 @@ public class ListObjectDecoder<T> implements MultiDecoder<T> {
     }
 
     @Override
-    public Decoder<Object> getDecoder(int paramNum, State state) {
+    public Decoder<Object> getDecoder(Codec codec, int paramNum, State state, long size) {
         if (paramNum == 0) {
             return StringCodec.INSTANCE.getValueDecoder();
         }
-        return null;
+        return MultiDecoder.super.getDecoder(codec, paramNum, state, size);
     }
     
     @Override

@@ -1,5 +1,5 @@
 /**
- * Copyright (c) 2013-2019 Nikita Koksharov
+ * Copyright (c) 2013-2026 Nikita Koksharov
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -15,28 +15,19 @@
  */
 package org.redisson.connection;
 
-import java.net.InetSocketAddress;
-import java.net.URI;
-import java.util.Collection;
-import java.util.UUID;
-import java.util.concurrent.ExecutorService;
-import java.util.concurrent.TimeUnit;
-
+import io.netty.buffer.ByteBuf;
 import org.redisson.api.NodeType;
-import org.redisson.api.RFuture;
 import org.redisson.client.RedisClient;
-import org.redisson.client.RedisConnection;
-import org.redisson.client.codec.Codec;
-import org.redisson.client.protocol.RedisCommand;
-import org.redisson.command.CommandSyncService;
-import org.redisson.config.Config;
-import org.redisson.config.MasterSlaveServersConfig;
-import org.redisson.misc.InfinitySemaphoreLatch;
+import org.redisson.command.CommandAsyncExecutor;
+import org.redisson.config.*;
+import org.redisson.liveobject.core.RedissonObjectBuilder;
+import org.redisson.misc.RedisURI;
 import org.redisson.pubsub.PublishSubscribeService;
 
-import io.netty.channel.EventLoopGroup;
-import io.netty.util.Timeout;
-import io.netty.util.TimerTask;
+import java.net.InetSocketAddress;
+import java.util.Collection;
+import java.util.concurrent.CompletionStage;
+import java.util.concurrent.TimeUnit;
 
 /**
  *
@@ -44,69 +35,79 @@ import io.netty.util.TimerTask;
  *
  */
 public interface ConnectionManager {
-    
-    UUID getId();
-    
-    CommandSyncService getCommandExecutor();
-    
+
+    void connect();
+
     PublishSubscribeService getSubscribeService();
     
-    ExecutorService getExecutor();
-    
-    URI getLastClusterNode();
-    
-    Config getCfg();
-
-    boolean isClusterMode();
-
-    ConnectionEventsHub getConnectionEventsHub();
-
-    boolean isShutdown();
-
-    boolean isShuttingDown();
-    
-    IdleConnectionWatcher getConnectionWatcher();
+    RedisURI getLastClusterNode();
 
     int calcSlot(String key);
-    
+
+    int calcSlot(ByteBuf key);
+
     int calcSlot(byte[] key);
 
-    MasterSlaveServersConfig getConfig();
-
-    Codec getCodec();
-
     Collection<MasterSlaveEntry> getEntrySet();
-    
+
+    /**
+     * Returns the next master entry using round-robin strategy.
+     * In single-server mode returns the single master; in cluster mode
+     * distributes across all cluster masters.
+     */
+    MasterSlaveEntry getNextEntry();
+
+    MasterSlaveEntry getEntry(String name);
+
     MasterSlaveEntry getEntry(int slot);
+
+    MasterSlaveEntry getWriteEntry(int slot);
+
+    MasterSlaveEntry getReadEntry(int slot);
     
     MasterSlaveEntry getEntry(InetSocketAddress address);
+
+    MasterSlaveEntry getEntry(RedisURI addr);
+
+    RedisClient createClient(NodeType type, InetSocketAddress address, RedisURI uri, String sslHostname);
     
-    void releaseRead(NodeSource source, RedisConnection connection);
-
-    void releaseWrite(NodeSource source, RedisConnection connection);
-
-    RFuture<RedisConnection> connectionReadOp(NodeSource source, RedisCommand<?> command);
-
-    RFuture<RedisConnection> connectionWriteOp(NodeSource source, RedisCommand<?> command);
-
-    RedisClient createClient(NodeType type, URI address, int timeout, int commandTimeout, String sslHostname);
-
-    RedisClient createClient(NodeType type, InetSocketAddress address, URI uri, String sslHostname);
-    
-    RedisClient createClient(NodeType type, URI address, String sslHostname);
+    RedisClient createClient(NodeType type, RedisURI address, String sslHostname);
 
     MasterSlaveEntry getEntry(RedisClient redisClient);
     
     void shutdown();
 
     void shutdown(long quietPeriod, long timeout, TimeUnit unit);
-    
-    EventLoopGroup getGroup();
 
-    Timeout newTimeout(TimerTask task, long delay, TimeUnit unit);
-
-    InfinitySemaphoreLatch getShutdownLatch();
+    CompletionStage<Void> shutdownAsync(long quietPeriod, long timeout, TimeUnit unit);
     
-    RFuture<Boolean> getShutdownPromise();
+    ServiceManager getServiceManager();
+
+    CommandAsyncExecutor createCommandExecutor(RedissonObjectBuilder objectBuilder,
+                                               RedissonObjectBuilder.ReferenceType referenceType);
+
+    static ConnectionManager create(Config configCopy) {
+        BaseConfig<?> cfg = ConfigSupport.getConfig(configCopy);
+        ConnectionManager cm = null;
+        if (cfg instanceof MasterSlaveServersConfig) {
+            cm = new MasterSlaveConnectionManager((MasterSlaveServersConfig) cfg, configCopy);
+        } else if (cfg instanceof SingleServerConfig) {
+            cm = new SingleConnectionManager((SingleServerConfig) cfg, configCopy);
+        } else if (cfg instanceof SentinelServersConfig) {
+            cm = new SentinelConnectionManager((SentinelServersConfig) cfg, configCopy);
+        } else if (cfg instanceof ClusterServersConfig) {
+            cm = new ClusterConnectionManager((ClusterServersConfig) cfg, configCopy);
+        } else if (cfg instanceof ReplicatedServersConfig) {
+            cm = new ReplicatedConnectionManager((ReplicatedServersConfig) cfg, configCopy);
+        }
+
+        if (cm == null) {
+            throw new IllegalArgumentException("server(s) address(es) not defined!");
+        }
+        if (!configCopy.isLazyInitialization()) {
+            cm.connect();
+        }
+        return cm;
+    }
 
 }

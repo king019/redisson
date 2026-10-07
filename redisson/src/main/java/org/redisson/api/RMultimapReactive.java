@@ -1,5 +1,5 @@
 /**
- * Copyright (c) 2013-2019 Nikita Koksharov
+ * Copyright (c) 2013-2026 Nikita Koksharov
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -20,7 +20,7 @@ import java.util.Set;
 import reactor.core.publisher.Mono;
 
 /**
- * Reactive interface for Multimap object
+ * Base Reactive interface for Multimap object
  * 
  * @author Nikita Koksharov
  *
@@ -119,6 +119,15 @@ public interface RMultimapReactive<K, V> extends RExpirableReactive {
     Mono<Integer> keySize();
 
     /**
+     * Stores a collection of values with the same key, replacing any existing
+     * values for that key. Is faster by not returning the values.
+     *
+     * @param key - map key
+     * @param values - map values
+     */
+    Mono<Void> fastReplaceValues(K key, Iterable<? extends V> values);
+
+    /**
      * Removes <code>keys</code> from map by one operation
      *
      * Works faster than <code>RMultimap.remove</code> but not returning
@@ -128,6 +137,14 @@ public interface RMultimapReactive<K, V> extends RExpirableReactive {
      * @return the number of keys that were removed from the hash, not including specified but non existing keys
      */
     Mono<Long> fastRemove(K... keys);
+
+    /**
+     * Removes <code>values</code> from map by one operation
+     *
+     * @param values map values
+     * @return the number of values that were removed from the map
+     */
+    Mono<Long> fastRemoveValue(V... values);
 
     /**
      * Read all keys at once

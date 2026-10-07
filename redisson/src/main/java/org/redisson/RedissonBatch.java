@@ -1,5 +1,5 @@
 /**
- * Copyright (c) 2013-2019 Nikita Koksharov
+ * Copyright (c) 2013-2026 Nikita Koksharov
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -15,39 +15,11 @@
  */
 package org.redisson;
 
-import java.util.concurrent.TimeUnit;
-
-import org.redisson.api.BatchOptions;
-import org.redisson.api.BatchResult;
-import org.redisson.api.RAtomicDoubleAsync;
-import org.redisson.api.RAtomicLongAsync;
-import org.redisson.api.RBatch;
-import org.redisson.api.RBitSetAsync;
-import org.redisson.api.RBlockingDequeAsync;
-import org.redisson.api.RBlockingQueueAsync;
-import org.redisson.api.RBucketAsync;
-import org.redisson.api.RDequeAsync;
-import org.redisson.api.RFuture;
-import org.redisson.api.RGeoAsync;
-import org.redisson.api.RHyperLogLogAsync;
-import org.redisson.api.RKeysAsync;
-import org.redisson.api.RLexSortedSetAsync;
-import org.redisson.api.RListAsync;
-import org.redisson.api.RMapAsync;
-import org.redisson.api.RMapCacheAsync;
-import org.redisson.api.RMultimapAsync;
-import org.redisson.api.RMultimapCacheAsync;
-import org.redisson.api.RQueueAsync;
-import org.redisson.api.RScoredSortedSetAsync;
-import org.redisson.api.RScript;
-import org.redisson.api.RScriptAsync;
-import org.redisson.api.RSetAsync;
-import org.redisson.api.RSetCacheAsync;
-import org.redisson.api.RStreamAsync;
-import org.redisson.api.RTopicAsync;
+import org.redisson.api.*;
 import org.redisson.client.codec.Codec;
+import org.redisson.codec.JsonCodec;
+import org.redisson.command.CommandAsyncExecutor;
 import org.redisson.command.CommandBatchService;
-import org.redisson.connection.ConnectionManager;
 import org.redisson.eviction.EvictionScheduler;
 
 /**
@@ -60,12 +32,20 @@ public class RedissonBatch implements RBatch {
 
     private final EvictionScheduler evictionScheduler;
     private final CommandBatchService executorService;
-    private final BatchOptions options;
 
-    public RedissonBatch(EvictionScheduler evictionScheduler, ConnectionManager connectionManager, BatchOptions options) {
-        this.executorService = new CommandBatchService(connectionManager, options);
+    public RedissonBatch(EvictionScheduler evictionScheduler, CommandAsyncExecutor executor, BatchOptions options) {
+        this.executorService = executor.createCommandBatchService(options);
         this.evictionScheduler = evictionScheduler;
-        this.options = options;
+    }
+
+    @Override
+    public <V> RArrayAsync<V> getArray(String name) {
+        return new RedissonArray<V>(executorService, name);
+    }
+
+    @Override
+    public <V> RArrayAsync<V> getArray(String name, Codec codec) {
+        return new RedissonArray<V>(codec, executorService, name);
     }
 
     @Override
@@ -76,6 +56,11 @@ public class RedissonBatch implements RBatch {
     @Override
     public <V> RBucketAsync<V> getBucket(String name, Codec codec) {
         return new RedissonBucket<V>(codec, executorService, name);
+    }
+
+    @Override
+    public <V> RJsonBucketAsync<V> getJsonBucket(String name, JsonCodec codec) {
+        return new RedissonJsonBucket<>(codec, executorService, name);
     }
 
     @Override
@@ -100,12 +85,12 @@ public class RedissonBatch implements RBatch {
 
     @Override
     public <K, V> RMapAsync<K, V> getMap(String name) {
-        return new RedissonMap<K, V>(executorService, name, null, null);
+        return new RedissonMap<K, V>(executorService, name, null, null, null);
     }
 
     @Override
     public <K, V> RMapAsync<K, V> getMap(String name, Codec codec) {
-        return new RedissonMap<K, V>(codec, executorService, name, null, null);
+        return new RedissonMap<K, V>(codec, executorService, name, null, null, null);
     }
 
     @Override
@@ -126,6 +111,16 @@ public class RedissonBatch implements RBatch {
     @Override
     public RTopicAsync getTopic(String name, Codec codec) {
         return new RedissonTopic(codec, executorService, name);
+    }
+
+    @Override
+    public RShardedTopicAsync getShardedTopic(String name) {
+        return new RedissonShardedTopic(executorService, name);
+    }
+
+    @Override
+    public RShardedTopicAsync getShardedTopic(String name, Codec codec) {
+        return new RedissonShardedTopic(codec, executorService, name);
     }
 
     @Override
@@ -200,12 +195,22 @@ public class RedissonBatch implements RBatch {
 
     @Override
     public <K, V> RMapCacheAsync<K, V> getMapCache(String name, Codec codec) {
-        return new RedissonMapCache<K, V>(codec, evictionScheduler, executorService, name, null, null);
+        return new RedissonMapCache<K, V>(codec, evictionScheduler, executorService, name, null, null, null);
     }
 
     @Override
     public <K, V> RMapCacheAsync<K, V> getMapCache(String name) {
-        return new RedissonMapCache<K, V>(evictionScheduler, executorService, name, null, null);
+        return new RedissonMapCache<K, V>(evictionScheduler, executorService, name, null, null, null);
+    }
+
+    @Override
+    public <K, V> RMapCacheNativeAsync<K, V> getMapCacheNative(String name) {
+        return new RedissonMapCacheNative<>(executorService, name, null, null, null);
+    }
+
+    @Override
+    public <K, V> RMapCacheNativeAsync<K, V> getMapCacheNative(String name, Codec codec) {
+        return new RedissonMapCacheNative<>(codec, executorService, name, null, null, null);
     }
 
     @Override
@@ -214,13 +219,33 @@ public class RedissonBatch implements RBatch {
     }
     
     @Override
-    public RScript getScript(Codec codec) {
+    public RScriptAsync getScript(Codec codec) {
         return new RedissonScript(executorService, codec);
+    }
+
+    @Override
+    public RFunctionAsync getFunction() {
+        return new RedissonFuction(executorService);
+    }
+
+    @Override
+    public RFunctionAsync getFunction(Codec codec) {
+        return new RedissonFuction(executorService, codec);
     }
 
     @Override
     public RKeysAsync getKeys() {
         return new RedissonKeys(executorService);
+    }
+
+    @Override
+    public RSearchAsync getSearch() {
+        return new RedissonSearch(executorService);
+    }
+
+    @Override
+    public RSearchAsync getSearch(Codec codec) {
+        return new RedissonSearch(codec, executorService);
     }
 
     @Override
@@ -234,51 +259,25 @@ public class RedissonBatch implements RBatch {
     }
 
     @Override
-    public RBatch syncSlaves(int slaves, long timeout, TimeUnit unit) {
-        options.syncSlaves(slaves, timeout, unit);
-        return this;
-    }
-    
-    @Override
-    public RBatch atomic() {
-        options.atomic();
-        return this;
-    }
-    
-    @Override
-    public RBatch skipResult() {
-        options.skipResult();
-        return this;
-    }
-    
-    @Override
-    public RBatch retryAttempts(int retryAttempts) {
-        options.retryAttempts(retryAttempts);
-        return this;
-    }
-    
-    @Override
-    public RBatch retryInterval(long retryInterval, TimeUnit unit) {
-        options.retryInterval(retryInterval, unit);
-        return this;
-    }
-    
-    @Override
-    public RBatch timeout(long timeout, TimeUnit unit) {
-        options.responseTimeout(timeout, unit);
-        return this;
-    }
-    
-    @Override
     public BatchResult<?> execute() {
-        return executorService.execute(BatchOptions.defaults());
+        return executorService.execute();
     }
 
     @Override
     public RFuture<BatchResult<?>> executeAsync() {
-        return executorService.executeAsync(BatchOptions.defaults());
+        return executorService.executeAsync();
     }
-    
+
+    @Override
+    public void discard() {
+        executorService.discard();
+    }
+
+    @Override
+    public RFuture<Void> discardAsync() {
+        return executorService.discardAsync();
+    }
+
     @Override
     public <K, V> RMultimapAsync<K, V> getSetMultimap(String name) {
         return new RedissonSetMultimap<K, V>(executorService, name);
@@ -321,26 +320,98 @@ public class RedissonBatch implements RBatch {
 
     @Override
     public <K, V> RMultimapCacheAsync<K, V> getListMultimapCache(String name) {
-        return new RedissonListMultimapCache<K, V>(evictionScheduler, executorService, name);
+        return new RedissonListMultimapCache<>(evictionScheduler, executorService, name);
     }
     
     @Override
     public <K, V> RMultimapCacheAsync<K, V> getListMultimapCache(String name, Codec codec) {
-        return new RedissonListMultimapCache<K, V>(evictionScheduler, codec, executorService, name);
+        return new RedissonListMultimapCache<>(evictionScheduler, codec, executorService, name);
     }
 
-    protected void enableRedissonReferenceSupport(Redisson redisson) {
-        this.executorService.enableRedissonReferenceSupport(redisson);
+    @Override
+    public <K, V> RMultimapCacheAsync<K, V> getListMultimapCacheNative(String name) {
+        return new RedissonListMultimapCacheNative<>(executorService, name);
+    }
+
+    @Override
+    public <K, V> RMultimapCacheAsync<K, V> getListMultimapCacheNative(String name, Codec codec) {
+        return new RedissonListMultimapCacheNative<>(codec, executorService, name);
+    }
+
+    @Override
+    public <K, V> RMultimapCacheAsync<K, V> getSetMultimapCacheNative(String name) {
+        return new RedissonSetMultimapCacheNative<>(executorService, name);
+    }
+
+    @Override
+    public <K, V> RMultimapCacheAsync<K, V> getSetMultimapCacheNative(String name, Codec codec) {
+        return new RedissonSetMultimapCacheNative<>(codec, executorService, name);
     }
 
     @Override
     public <K, V> RStreamAsync<K, V> getStream(String name) {
-        return new RedissonStream<K, V>(executorService, name);
+        return new RedissonStream<>(executorService, name);
     }
 
     @Override
     public <K, V> RStreamAsync<K, V> getStream(String name, Codec codec) {  
-        return new RedissonStream<K, V>(codec, executorService, name);
+        return new RedissonStream<>(codec, executorService, name);
     }
+
+    @Override
+    public RTimeSeriesNativeAsync getTimeSeriesNative(String name) {
+        return new RedissonTimeSeriesNative(executorService, name);
+    }
+
+    @Override
+    public <T> RBloomFilterNativeAsync<T> getBloomFilterNative(String name) {
+        return new RedissonBloomFilterNative<>(executorService, name);
+    }
+
+    @Override
+    public <T> RBloomFilterNativeAsync<T> getBloomFilterNative(String name, Codec codec) {
+        return new RedissonBloomFilterNative<>(codec, executorService, name);
+    }
+
+    @Override
+    public <V> RCuckooFilterAsync<V> getCuckooFilter(String name) {
+        return getCuckooFilter(name, null);
+    }
+
+    @Override
+    public <V> RCuckooFilterAsync<V> getCuckooFilter(String name, Codec codec) {
+        return new RedissonCuckooFilter<V>(codec, executorService, name);
+    }
+
+    @Override
+    public RTDigestAsync getTDigest(String name) {
+        return new RedissonTDigest(executorService, name);
+    }
+
+    @Override
+    public <V> RTopKAsync<V> getTopK(String name) {
+        return getTopK(name, null);
+    }
+
+    @Override
+    public <V> RTopKAsync<V> getTopK(String name, Codec codec) {
+        return new RedissonTopK<V>(codec, executorService, name);
+    }
+
+    @Override
+    public <V> RCountMinAsync<V> getCountMin(String name) {
+        return getCountMin(name, null);
+    }
+
+    @Override
+    public <V> RCountMinAsync<V> getCountMin(String name, Codec codec) {
+        return new RedissonCountMin<V>(codec, executorService, name);
+    }
+
+    @Override
+    public RVectorSetAsync getVectorSet(String name) {
+        return new RedissonVectorSet(executorService, name);
+    }
+
 
 }

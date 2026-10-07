@@ -1,5 +1,5 @@
 /**
- * Copyright (c) 2013-2019 Nikita Koksharov
+ * Copyright (c) 2013-2026 Nikita Koksharov
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -15,20 +15,16 @@
  */
 package org.redisson.pubsub;
 
-import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.ConcurrentMap;
-import java.util.concurrent.atomic.AtomicReference;
-
 import org.redisson.PubSubEntry;
-import org.redisson.api.RFuture;
 import org.redisson.client.BaseRedisPubSubListener;
 import org.redisson.client.ChannelName;
 import org.redisson.client.RedisPubSubListener;
 import org.redisson.client.codec.LongCodec;
-import org.redisson.client.protocol.pubsub.PubSubType;
-import org.redisson.misc.RPromise;
-import org.redisson.misc.RedissonPromise;
-import org.redisson.misc.TransferListener;
+import org.redisson.misc.AsyncSemaphore;
+
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ConcurrentMap;
 
 /**
  * 
@@ -37,83 +33,107 @@ import org.redisson.misc.TransferListener;
  */
 abstract class PublishSubscribe<E extends PubSubEntry<E>> {
 
+    private final ConcurrentMap<String, E> entries = new ConcurrentHashMap<>();
     private final PublishSubscribeService service;
-    
+
     PublishSubscribe(PublishSubscribeService service) {
         super();
         this.service = service;
     }
 
-    private final ConcurrentMap<String, E> entries = new ConcurrentHashMap<>();
-
     public void unsubscribe(E entry, String entryName, String channelName) {
-        AsyncSemaphore semaphore = service.getSemaphore(new ChannelName(channelName));
-        semaphore.acquire(new Runnable() {
-            @Override
-            public void run() {
-                if (entry.release() == 0) {
-                    // just an assertion
-                    boolean removed = entries.remove(entryName) == entry;
-                    if (!removed) {
-                        throw new IllegalStateException();
-                    }
-                    service.unsubscribe(new ChannelName(channelName), semaphore);
-                } else {
-                    semaphore.release();
-                }
+        ChannelName cn = new ChannelName(channelName);
+        AsyncSemaphore semaphore = service.getSemaphore(cn);
+        semaphore.acquire().thenAccept(c -> {
+            if (entry.release() == 0) {
+                entries.remove(entryName);
+                service.unsubscribeLocked(cn)
+                        .whenComplete((r, e) -> {
+                            semaphore.release();
+                        });
+            } else {
+                semaphore.release();
             }
         });
-
     }
 
-    public E getEntry(String entryName) {
-        return entries.get(entryName);
+    public void timeout(CompletableFuture<?> promise) {
+        service.timeout(promise);
     }
 
-    public RFuture<E> subscribe(String entryName, String channelName) {
-        AtomicReference<Runnable> listenerHolder = new AtomicReference<Runnable>();
+    public void timeout(CompletableFuture<?> promise, long timeout) {
+        service.timeout(promise, timeout);
+    }
+    public CompletableFuture<E> subscribe(String entryName, String channelName) {
+        return subscribe(entryName, channelName, 1);
+    }
+    public CompletableFuture<E> subscribe(String entryName, String channelName, int permits) {
         AsyncSemaphore semaphore = service.getSemaphore(new ChannelName(channelName));
-        RPromise<E> newPromise = new RedissonPromise<E>() {
-            @Override
-            public boolean cancel(boolean mayInterruptIfRunning) {
-                return semaphore.remove(listenerHolder.get());
+        CompletableFuture<E> newPromise = new CompletableFuture<>();
+
+        semaphore.acquire().thenAccept(c -> {
+            if (newPromise.isDone()) {
+                semaphore.release();
+                return;
             }
-        };
 
-        Runnable listener = new Runnable() {
+            E entry = entries.get(entryName);
+            if (entry != null) {
+                entry.acquire(permits);
+                semaphore.release();
+                entry.getPromise().whenComplete((r, e) -> {
+                    if (e != null) {
+                        newPromise.completeExceptionally(e);
+                        return;
+                    }
+                    newPromise.complete(r);
+                });
+                return;
+            }
 
-            @Override
-            public void run() {
-                E entry = entries.get(entryName);
-                if (entry != null) {
-                    entry.aquire();
-                    semaphore.release();
-                    entry.getPromise().onComplete(new TransferListener<E>(newPromise));
+            E value = createEntry(newPromise);
+            value.acquire(permits);
+
+            E oldValue = entries.putIfAbsent(entryName, value);
+            if (oldValue != null) {
+                oldValue.acquire(permits);
+                semaphore.release();
+                oldValue.getPromise().whenComplete((r, e) -> {
+                    if (e != null) {
+                        newPromise.completeExceptionally(e);
+                        return;
+                    }
+                    newPromise.complete(r);
+                });
+                return;
+            }
+
+            RedisPubSubListener<Object> listener = createListener(channelName, value);
+            CompletableFuture<PubSubConnectionEntry> s = service.subscribeNoTimeout(LongCodec.INSTANCE, channelName, semaphore, listener);
+            newPromise.whenComplete((r, e) -> {
+                if (e != null) {
+                    s.completeExceptionally(e);
+                }
+            });
+            s.whenComplete((r, e) -> {
+                if (e != null) {
+                    entries.remove(entryName);
+                    value.getPromise().completeExceptionally(e);
                     return;
                 }
-                
-                E value = createEntry(newPromise);
-                value.aquire();
-                
-                E oldValue = entries.putIfAbsent(entryName, value);
-                if (oldValue != null) {
-                    oldValue.aquire();
-                    semaphore.release();
-                    oldValue.getPromise().onComplete(new TransferListener<E>(newPromise));
-                    return;
+                if (!value.getPromise().complete(value)) {
+                    if (value.getPromise().isCompletedExceptionally()) {
+                        entries.remove(entryName);
+                    }
                 }
-                
-                RedisPubSubListener<Object> listener = createListener(channelName, value);
-                service.subscribe(LongCodec.INSTANCE, channelName, semaphore, listener);
-            }
-        };
-        semaphore.acquire(listener);
-        listenerHolder.set(listener);
-        
+            });
+
+        });
+
         return newPromise;
     }
 
-    protected abstract E createEntry(RPromise<E> newPromise);
+    protected abstract E createEntry(CompletableFuture<E> newPromise);
 
     protected abstract void onMessage(E value, Long message);
 
@@ -128,20 +148,6 @@ abstract class PublishSubscribe<E extends PubSubEntry<E>> {
 
                 PublishSubscribe.this.onMessage(value, (Long) message);
             }
-
-            @Override
-            public boolean onStatus(PubSubType type, CharSequence channel) {
-                if (!channelName.equals(channel.toString())) {
-                    return false;
-                }
-
-                if (type == PubSubType.SUBSCRIBE) {
-                    value.getPromise().trySuccess(value);
-                    return true;
-                }
-                return false;
-            }
-
         };
         return listener;
     }
